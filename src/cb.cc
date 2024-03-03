@@ -165,6 +165,13 @@ void init_cuts_data() {
 //int cuts_generator(CPXCENVptr env, void *cbdata, int wherefrom, void *cbhandle, int *useraction_p) {
 //int cuts_generator(CPXCENVptr env, void *cbdata, int wherefrom, void *cbhandle, int *nodeindex_p, int *useraction_p) {
 int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
+	// producing cuts more then once for the same node is wasteful
+	thread_local static long long prev_id = -1;
+	long long node_id;
+	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
+	if (node_id == prev_id) return 0;
+	else prev_id = node_id;
+
 	// upperbound of the x variables at the local node
 	thread_local static double lb[MAX_N];
 	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
@@ -270,7 +277,7 @@ int main() {
 	}
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
-	cerr << "# cb, no dynamic search, static alloc" << endl;
+	cerr << "# cb, no dynamic search, static alloc, once per node" << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));
