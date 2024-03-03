@@ -10,6 +10,17 @@
 
 #include <inputs.hh>
 
+// parameters
+
+// seems faster on bigger problems
+constexpr bool PARAM_DYNAMIC_SEARCH = true;
+// greatly improves the LP
+constexpr bool PARAM_LOCAL_L = true;
+// makes B&B about 3 to 5 times slower, but improves the LP
+constexpr bool PARAM_LOCAL_M = true;
+// -1 to disable
+constexpr double PARAM_TIME_LIMIT = 60;
+
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
 
@@ -140,43 +151,31 @@ void add_cons_L(CPXENVptr env, CPXLPptr lp) {
     _c(CPXaddrows(env, lp, 0, N, N*2, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
-static double C_rhs[MAX_N];
-static char C_sense[MAX_N];
-static int C_rmatbeg[MAX_N];
-static int C_rmatind[MAX_N*2];
-thread_local static double C_rmatval[MAX_N*2];
-static int C_purgeable[MAX_N];
-static int C_local[MAX_N];
+static double L_rhs[MAX_N];
+static char L_sense[MAX_N];
+static int L_rmatbeg[MAX_N];
+static int L_rmatind[MAX_N*2];
+static int L_purgeable[MAX_N];
+static int L_local[MAX_N];
 
-void init_cuts_data() {
-	fill_n(C_rhs, N, 0);
-	fill_n(C_sense, N, 'G');
-	fill_n(C_rmatbeg, N, 0);
-	fill_n(C_purgeable, N, CPX_USECUT_FILTER);
-	fill_n(C_local, N, 1);
+void init_local_L_data() {
+	fill_n(L_rhs, N, 0);
+	fill_n(L_sense, N, 'G');
+	fill_n(L_rmatbeg, N, 0);
+	fill_n(L_purgeable, N, CPX_USECUT_FORCE);
+	fill_n(L_local, N, 1);
     for (int i = 0; i < N; i++) {
 		int beg = i * 2;
-		C_rmatbeg[i] = beg;
-		C_rmatind[beg + 0] = i_w(i);
-		C_rmatind[beg + 1] = i_x(i);
+		L_rmatbeg[i] = beg;
+		L_rmatind[beg + 0] = i_w(i);
+		L_rmatind[beg + 1] = i_x(i);
 	}
 }
 
-//int cuts_generator(CPXCENVptr env, void *cbdata, int wherefrom, void *cbhandle, int *useraction_p) {
-//int cuts_generator(CPXCENVptr env, void *cbdata, int wherefrom, void *cbhandle, int *nodeindex_p, int *useraction_p) {
-int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
-	// producing cuts more then once for the same node is wasteful
-	thread_local static long long prev_id = -1;
-	long long node_id;
-	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
-	if (node_id == prev_id) return 0;
-	else prev_id = node_id;
-
+void improve_local_L(CPXCALLBACKCONTEXTptr context) {
 	// upperbound of the x variables at the local node
 	thread_local static double lb[MAX_N];
 	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
-	//thread_local static double ub[MAX_N];
-	//_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
 
 	// keeps track of which variables are fixed to 1
 	thread_local static bool fixed[MAX_N];
@@ -184,8 +183,8 @@ int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userh
 	int num_fixed = count(fixed, fixed+N, true);
 	assert(num_fixed <= M); // should never fix more than M varaibles to 1
 
-	// calculate all L_i
-	thread_local static double L[MAX_N];
+	// calculate all local L_i
+	thread_local static double ll[MAX_N];
 	for (int i=0; i<N; i++) {
 		int take = M;
 		double tot = 0;
@@ -208,24 +207,105 @@ int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userh
 			tot += B[i][j];
 			take--;
 		}
-		L[i] = tot;
+		assert(take == 0);
+		ll[i] = tot;
 	}
 
 	// generate new contraints
+	thread_local static double L_rmatval[MAX_N*2];
     for (int i = 0; i < N; i++) {
 		int beg = i * 2;
-		C_rmatval[beg + 0] = 1;
-		C_rmatval[beg + 1] = -L[i];
+		L_rmatval[beg + 0] = 1;
+		L_rmatval[beg + 1] = -ll[i];
 	}
-    _c(CPXcallbackaddusercuts(context, N, N*2, C_rhs, C_sense, C_rmatbeg, C_rmatind, C_rmatval, C_purgeable, C_local));
+    _c(CPXcallbackaddusercuts(context, N, N*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
+}
+
+static char M_sense[MAX_N];
+static int M_rmatbeg[MAX_N];
+static int M_rmatind[MAX_N*(MAX_N+1)];
+static int M_purgeable[MAX_N];
+static int M_local[MAX_N];
+
+void init_local_M_data() {
+	fill_n(M_sense, N, 'L');
+	fill_n(M_rmatbeg, N, 0);
+	fill_n(M_rmatind, N*(N+1), 0);
+	fill_n(M_purgeable, N, CPX_USECUT_FORCE);
+	fill_n(M_local, N, 1);
+    for (int i = 0; i < N; i++) {
+		int beg = i * (N+1);
+		M_rmatbeg[i] = beg;
+		for (int j = 0; j < N; j++) {
+			M_rmatind[beg + j] = i_x(j);
+		}
+		M_rmatind[beg + N] = i_w(i);
+	}
+}
+
+void improve_local_M(CPXCALLBACKCONTEXTptr context) {
+	// upperbound of the x variables at the local node
+	thread_local static double ub[MAX_N];
+	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
+
+	// keeps track of which variables are fixed to 1
+	thread_local static bool fixed[MAX_N];
+	for (int i=0; i<N; i++) fixed[i] = ub[i] < .5;
+	int num_fixed = count(fixed, fixed+N, true);
+	assert(num_fixed <= N-M); // should never fix more than N-M varaibles to 0
+
+	// calculate all local M_i
+	thread_local static double lm[MAX_N];
+	for (int i=0; i<N; i++) {
+		int take = M;
+		double tot = 0;
+		// take the biggest values not fixed to 0
+		for (int k = N-1; take && k >= 0; k--) {
+			int j = B_order[i][k];
+			if (j == i || fixed[j]) continue;
+			tot += B[i][j];
+			take--;
+		}
+		assert(take == 0);
+		lm[i] = tot;
+	}
+
+	// generate new constraints
+	thread_local static double M_rhs[MAX_N];
+	thread_local static double M_rmatval[MAX_N*(MAX_N+1)];
+    for (int i = 0; i < N; i++) {
+		int beg = i * (N+1);
+		M_rhs[i] = lm[i];
+		for (int j = 0; j < N; j++) {
+			M_rmatval[beg + j] = B[i][j] + (i==j ? lm[i] : 0);
+		}
+		M_rmatval[beg + N] = -1;
+	}
+    _c(CPXcallbackaddusercuts(context, N, N*(N+1), M_rhs, M_sense, M_rmatbeg, M_rmatind, M_rmatval, M_purgeable, M_local));
+}
+
+int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
+	// producing cuts more then once for the same node is wasteful
+	thread_local static long long prev_id = -1;
+	long long node_id;
+	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
+	if (node_id == prev_id) return 0;
+	else prev_id = node_id;
+
+	if (PARAM_LOCAL_L)
+		improve_local_L(context);
+	if (PARAM_LOCAL_M)
+		improve_local_M(context);
 	
 	return 0;
 }
 
 int main() {
 	read_inputs();
+
 	preorder_B();
-	init_cuts_data();
+	init_local_L_data();
+	init_local_M_data();
 
 	int status;
     CPXENVptr env = CPXopenCPLEX(&status);
@@ -244,20 +324,20 @@ int main() {
 
 	add_cons_M(env, lp);
 	add_cons_xw(env, lp);
-	//add_cons_L(env, lp); // not needed as they are added locally
+	if (!PARAM_LOCAL_L) // not needed as they are added locally
+		add_cons_L(env, lp);
 
 	// write problem
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
 	// add a callback to generate cuts
-	_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_CallbackReducedLP, CPX_OFF)); // we generate cuts for the original problem, not the presolved one
-	//_c(CPXsetusercutcallbackfunc(env, cuts_generator, NULL));
-	//_c(CPXsetnodecallbackfunc(env, cuts_generator, NULL));
 	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cuts_generator, NULL));
 
-
     // solve as mip
-	_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL)); // TODO dynamic search vs traditional search
+	if (PARAM_TIME_LIMIT != -1)
+		_c(CPXsetdblparam(env, CPXPARAM_TimeLimit, PARAM_TIME_LIMIT));
+	if (!PARAM_DYNAMIC_SEARCH)
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));
@@ -277,7 +357,11 @@ int main() {
 	}
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
-	cerr << "# cb, no dynamic search, static alloc, once per node" << endl;
+	cerr << "# cb"
+		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
+		<< ", local L = " << PARAM_LOCAL_L
+		<< ", local M = " << PARAM_LOCAL_M
+		<< ", tl = " << PARAM_TIME_LIMIT << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));
