@@ -19,7 +19,7 @@ constexpr bool PARAM_LOCAL_L = true;
 // makes B&B about 3 to 5 times slower, but improves the LP
 constexpr bool PARAM_LOCAL_M = true;
 // -1 to disable
-constexpr double PARAM_TIME_LIMIT = 60;
+constexpr double PARAM_TIME_LIMIT = -1;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }

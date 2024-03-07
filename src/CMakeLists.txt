@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # find sources
 file(GLOB_RECURSE LIB CONFIGURE_DEPENDS "lib/*.cc" "include/*.hh")
 include_directories(include)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 
 # enable sanitizers in debug mode
 option(SANITIZE "Enable sanitizaers in debug builds" ON)
@@ -31,3 +31,6 @@ target_link_libraries(nocb PRIVATE ${CPLEX_LIBRARIES})
 
 add_executable(cb ${LIB} cb.cc)
 target_link_libraries(cb PRIVATE ${CPLEX_LIBRARIES})
+
+add_executable(custom ${LIB} experiments/custom.cc)
+target_link_libraries(custom PRIVATE ${CPLEX_LIBRARIES})
