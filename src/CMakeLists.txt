@@ -37,3 +37,6 @@ target_link_libraries(cb2 PRIVATE ${CPLEX_LIBRARIES})
 
 add_executable(custom ${LIB} experiments/custom.cc)
 target_link_libraries(custom PRIVATE ${CPLEX_LIBRARIES})
+
+add_executable(mixed ${LIB} experiments/mixed.cc)
+target_link_libraries(mixed PRIVATE ${CPLEX_LIBRARIES})
