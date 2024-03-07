@@ -162,10 +162,10 @@ int main() {
 	add_cons_L(env, lp);
 
 	// write problem
-	_c(CPXwriteprob(env, lp, "p.lp", NULL));
+	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
-	_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL)); // TODO dynamic search vs traditional search
+	//_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));

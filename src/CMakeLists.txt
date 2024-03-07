@@ -32,5 +32,8 @@ target_link_libraries(nocb PRIVATE ${CPLEX_LIBRARIES})
 add_executable(cb ${LIB} cb.cc)
 target_link_libraries(cb PRIVATE ${CPLEX_LIBRARIES})
 
+add_executable(cb2 ${LIB} experiments/cb2.cc)
+target_link_libraries(cb2 PRIVATE ${CPLEX_LIBRARIES})
+
 add_executable(custom ${LIB} experiments/custom.cc)
 target_link_libraries(custom PRIVATE ${CPLEX_LIBRARIES})

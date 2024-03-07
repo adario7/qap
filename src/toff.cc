@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <stdio.h>
@@ -69,7 +68,7 @@ void add_cons_M(CPXENVptr env, CPXLPptr lp) {
 }
 
 // y_ij <= x_i <=> y_ij - x_i <= 0
-void add_cons_xw(CPXENVptr env, CPXLPptr lp) {
+void add_cons_and1(CPXENVptr env, CPXLPptr lp) {
 	vector<double> rhs(N*N, 0);
 	vector<char> sense(N*N, 'L');
 	vector<int> rmatbeg(N*N, 0);
@@ -145,7 +144,7 @@ int main() {
 	add_variables_y(env, lp);
 
 	add_cons_M(env, lp);
-	add_cons_xw(env, lp);
+	add_cons_and1(env, lp);
 	add_cons_and2(env, lp);
 	add_cons_and3(env, lp);
 
@@ -153,7 +152,7 @@ int main() {
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
-	_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL)); // TODO dynamic search vs traditional search
+	//_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));
