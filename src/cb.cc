@@ -9,6 +9,7 @@
 #include <ilcplex/cplex.h>
 
 #include <inputs.hh>
+#include <live.hh>
 
 // parameters
 
@@ -17,9 +18,11 @@ constexpr bool PARAM_DYNAMIC_SEARCH = true;
 // greatly improves the LP
 constexpr bool PARAM_LOCAL_L = true;
 // makes nodes evaluation about 3 to 5 times slower, does not seem to improve the bound
-constexpr bool PARAM_LOCAL_M = true;
+constexpr bool PARAM_LOCAL_M = false;
 // -1 to disable
-constexpr double PARAM_TIME_LIMIT = 60;
+constexpr double PARAM_TIME_LIMIT = 45;
+
+constexpr bool PARAM_LIVE_SOL = false;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
@@ -285,6 +288,8 @@ void improve_local_M(CPXCALLBACKCONTEXTptr context) {
 }
 
 int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
+	if (PARAM_LIVE_SOL) live_display(context);
+
 	// producing cuts more then once for the same node is wasteful
 	thread_local static long long prev_id = -1;
 	long long node_id;
@@ -344,23 +349,26 @@ int main() {
 	_c(CPXgettime(env, &t_end));
 
     // print solution
-    double objval;
+    double objval, best_boud;
 	int solstat;
 	vector<double> sol(N + N);
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
+	_c(CPXgetbestobjval(env, lp, &best_boud));
 
 	cout << "solution = " << objval << endl;
-	cerr << N << " " << M << endl;
+	cerr << N << endl;
 	for (int i=0; i<N; i++) {
-		cerr << i << " " << int(sol[i_x(i)]) << endl;
+		cerr << int(sol[i_x(i)]) << endl;
 	}
 	cerr << "# obj = " << objval << endl;
+	cerr << "# bound = " << best_boud << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
 	cerr << "# cb"
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
 		<< ", local L = " << PARAM_LOCAL_L
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", tl = " << PARAM_TIME_LIMIT << endl;
+	cerr << "# n1 = " << M << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));
