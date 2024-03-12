@@ -11,6 +11,11 @@
 
 #define _c(what) if(what) abort()
 
+// seems faster on bigger problems
+constexpr bool PARAM_DYNAMIC_SEARCH = true;
+// -1 to disable
+constexpr double PARAM_TIME_LIMIT = 45;
+
 using namespace std;
 
 int i_x(int i) {
@@ -137,6 +142,7 @@ int main() {
 
 	// enable solver logging
 	_c(CPXsetintparam(env, CPX_PARAM_SCRIND, CPX_ON));
+	_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
 
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 
@@ -152,7 +158,10 @@ int main() {
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
-	//_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
+	if (!PARAM_DYNAMIC_SEARCH)
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
+	if (PARAM_TIME_LIMIT != -1)
+		_c(CPXsetdblparam(env, CPXPARAM_TimeLimit, PARAM_TIME_LIMIT));
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));
@@ -167,7 +176,6 @@ int main() {
 	cout << "solution = " << objval << endl;
 	cerr << N << " " << M << endl;
 	for (int i=0; i<N; i++) {
-		cout << "  x_" << i << " = " << int(sol[i_x(i)]) << endl;
 		cerr << i << " " << int(sol[i_x(i)]) << endl;
 	}
 	cerr << "# obj = " << objval << endl;

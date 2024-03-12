@@ -15,9 +15,10 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 	long long node_id;
 	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
 
-	static double x[MAX_N];
+	static double x[MAX_N], w[MAX_N];
 	double obj;
 	_c(CPXcallbackgetrelaxationpoint(context, x, 0, N-1, &obj));
+	_c(CPXcallbackgetrelaxationpoint(context, w, N, 2*N-1, NULL));
 
 	static double ub[MAX_N], lb[MAX_N];
 	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, 0, N));
@@ -30,6 +31,9 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 	}
 	for (int i=0; i<N; i++) {
 		of << x[i] << endl;
+	}
+	for (int i=0; i<N; i++) {
+		of << w[i] << endl;
 	}
 
 	cout << "node " << hex << node_id << dec << ", obj = " << obj << endl;

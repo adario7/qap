@@ -175,17 +175,7 @@ void init_local_L_data() {
 	}
 }
 
-void improve_local_L(CPXCALLBACKCONTEXTptr context) {
-	// upperbound of the x variables at the local node
-	thread_local static double lb[MAX_N];
-	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
-
-	// keeps track of which variables are fixed to 1
-	thread_local static bool fixed[MAX_N];
-	for (int i=0; i<N; i++) fixed[i] = lb[i] > .5;
-	int num_fixed = count(fixed, fixed+N, true);
-	assert(num_fixed <= M); // should never fix more than M varaibles to 1
-
+void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
 	// calculate all local L_i
 	thread_local static double ll[MAX_N];
 	for (int i=0; i<N; i++) {
@@ -196,8 +186,8 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context) {
 		tot += B[i][i];
 		// take all the fixed variables
 		for (int j = 0; take && j < N; j++) {
-			if (j == i) continue; // already counted
-			if (fixed[j]) {
+			if (j == i) continue; // already taken
+			if (fixed1[j]) {
 				tot += B[i][j];
 				take--;
 			}
@@ -205,8 +195,9 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context) {
 		// take the smallest remaining values
 		for (int k = 0; take && k < N; k++) {
 			int j = B_order[i][k];
-			if (j == i) continue; // already counted
-			if (fixed[j]) continue; // already counted
+			if (j == i) continue; // already taken
+			if (fixed1[j]) continue; // already counted
+			if (fixed0[j]) continue; // cannot be used
 			tot += B[i][j];
 			take--;
 		}
@@ -246,26 +237,26 @@ void init_local_M_data() {
 	}
 }
 
-void improve_local_M(CPXCALLBACKCONTEXTptr context) {
-	// upperbound of the x variables at the local node
-	thread_local static double ub[MAX_N];
-	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
-
-	// keeps track of which variables are fixed to 1
-	thread_local static bool fixed[MAX_N];
-	for (int i=0; i<N; i++) fixed[i] = ub[i] < .5;
-	int num_fixed = count(fixed, fixed+N, true);
-	assert(num_fixed <= N-M); // should never fix more than N-M varaibles to 0
-
+void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
 	// calculate all local M_i
 	thread_local static double lm[MAX_N];
 	for (int i=0; i<N; i++) {
 		int take = M;
 		double tot = 0;
-		// take the biggest values not fixed to 0
+		// take the biggest values fixed to 1
 		for (int k = N-1; take && k >= 0; k--) {
 			int j = B_order[i][k];
-			if (j == i || fixed[j]) continue;
+			if (fixed1[j]) {
+				tot += B[i][j];
+				take--;
+			}
+		}
+		// take the biggest remaining values
+		for (int k = N-1; take && k >= 0; k--) {
+			int j = B_order[i][k];
+			if (j == i) continue; // never take x_i
+			if (fixed1[j]) continue; // already taken
+			if (fixed0[j]) continue; // cannot be taken
 			tot += B[i][j];
 			take--;
 		}
@@ -297,10 +288,24 @@ int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userh
 	if (node_id == prev_id) return 0;
 	else prev_id = node_id;
 
+	// lower/upperbound of the x variables at the local node
+	thread_local static double lb[MAX_N];
+	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
+	thread_local static double ub[MAX_N];
+	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
+	// keeps track of which variables are fixed to 0/1
+	thread_local static bool fixed1[MAX_N];
+	for (int i=0; i<N; i++) fixed1[i] = lb[i] > .5;
+	int num_fixed1 = count(fixed1, fixed1+N, true);
+	thread_local static bool fixed0[MAX_N];
+	for (int i=0; i<N; i++) fixed0[i] = ub[i] < .5;
+	int num_fixed0 = count(fixed0, fixed0+N, true);
+	assert(num_fixed0 <= N-M);
+
 	if (PARAM_LOCAL_L)
-		improve_local_L(context);
+		improve_local_L(context, fixed0, fixed1);
 	if (PARAM_LOCAL_M)
-		improve_local_M(context);
+		improve_local_M(context, fixed0, fixed1);
 	
 	return 0;
 }
@@ -355,13 +360,15 @@ int main() {
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
 	_c(CPXgetbestobjval(env, lp, &best_boud));
 
+	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
 	cerr << N << endl;
 	for (int i=0; i<N; i++) {
 		cerr << int(sol[i_x(i)]) << endl;
 	}
 	cerr << "# obj = " << objval << endl;
-	cerr << "# bound = " << best_boud << endl;
+	if (solstat != CPXMIP_OPTIMAL)
+		cerr << "# bound = " << best_boud << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
 	cerr << "# cb"
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
