@@ -9,22 +9,15 @@
 #include <ilcplex/cplex.h>
 
 #include <inputs.hh>
-#include <live.hh>
 
 // parameters
 
 // seems faster on bigger problems
 constexpr bool PARAM_DYNAMIC_SEARCH = true;
-// greatly improves the LP
 constexpr bool PARAM_LOCAL_L = true;
-// makes nodes enumeration ~20% solwer, slightly improves the LP
-constexpr bool PARAM_LOCAL_L_PAIRS = false;
-// makes nodes evaluation about 3 to 5 times slower, does not seem to improve the bound
 constexpr bool PARAM_LOCAL_M = true;
 // -1 to disable
-constexpr double PARAM_TIME_LIMIT = 45;
-
-constexpr bool PARAM_LIVE_SOL = false;
+constexpr double PARAM_TIME_LIMIT = -1;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
@@ -51,9 +44,6 @@ void preorder_B() {
 			return B[i][ja] < B[i][jb];
 		});
 	}
-}
-
-void preorder_B_pairs() {
 	for (int j=0; j<N; j++)
 	for (int k=0; k<N; k++) {
 		for (int i=0; i<N; i++) B_jk_order[j][k][i] = i;
@@ -167,13 +157,55 @@ void add_cons_L(CPXENVptr env, CPXLPptr lp) {
     _c(CPXaddrows(env, lp, 0, N, N*2, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
+void add_cons_L_jk(CPXENVptr env, CPXLPptr lp) {
+	thread_local static double lljk[MAX_N][MAX_N];
+	for (int j=0; j<N; j++) for (int k=j+1; k<N; k++) {
+		int take = M;
+		double tot = 0;
+		// take the smallest remaining values
+		for (int ord = 0; take && ord < N; ord++) {
+			int i = B_jk_order[j][k][ord];
+			tot += B[i][j] + B[i][k];
+			take--;
+		}
+		assert(take == 0);
+		lljk[j][k] = tot;
+	}
+
+	int nn = N * (N - 1) / 2;
+	vector<double> rhs(nn, 0);
+	vector<char> sense(nn, 'G');
+	vector<int> rmatbeg(nn, 0);
+	vector<int> rmatind(nn*4, 0);
+	vector<double> rmatval(nn*4, 0);
+	vector<int> purgeable(nn, CPX_USECUT_FORCE);
+	vector<int> local(nn, 1);
+	int rcount = 0, beg = 0;
+	for (int j=0; j<N; j++) for (int k=j+1; k<N; k++) {
+		double Ljk = lljk[j][k];
+		rmatbeg[rcount++] = beg;
+		rmatind[beg  ] = i_w(j);
+		rmatval[beg++] = 1;
+		rmatind[beg  ] = i_w(k);
+		rmatval[beg++] = 1;
+		rmatind[beg  ] = i_x(j);
+		rmatval[beg++] = -Ljk/2;
+		rmatind[beg  ] = i_x(k);
+		rmatval[beg++] = -Ljk/2;
+	}
+	assert(rcount == nn);
+	assert(beg == nn*4);
+    _c(CPXaddrows(env, lp, 0, nn, nn*4, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
+}
+
 static double L_rhs[MAX_N];
 static char L_sense[MAX_N];
 static int L_rmatbeg[MAX_N];
+static int L_rmatind[MAX_N*2];
 static int L_purgeable[MAX_N];
 static int L_local[MAX_N];
 
-void init_L_data() {
+void init_local_L_data() {
 	fill_n(L_rhs, N, 0);
 	fill_n(L_sense, N, 'G');
 	fill_n(L_rmatbeg, N, 0);
@@ -182,10 +214,22 @@ void init_L_data() {
     for (int i = 0; i < N; i++) {
 		int beg = i * 2;
 		L_rmatbeg[i] = beg;
+		L_rmatind[beg + 0] = i_w(i);
+		L_rmatind[beg + 1] = i_x(i);
 	}
 }
 
-void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
+void improve_local_L(CPXCALLBACKCONTEXTptr context) {
+	// upperbound of the x variables at the local node
+	thread_local static double lb[MAX_N];
+	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
+
+	// keeps track of which variables are fixed to 1
+	thread_local static bool fixed[MAX_N];
+	for (int i=0; i<N; i++) fixed[i] = lb[i] > .5;
+	int num_fixed = count(fixed, fixed+N, true);
+	assert(num_fixed <= M); // should never fix more than M varaibles to 1
+
 	// calculate all local L_i
 	thread_local static double ll[MAX_N];
 	for (int i=0; i<N; i++) {
@@ -196,8 +240,8 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
 		tot += B[i][i];
 		// take all the fixed variables
 		for (int j = 0; take && j < N; j++) {
-			if (j == i) continue; // already taken
-			if (fixed1[j]) {
+			if (j == i) continue; // already counted
+			if (fixed[j]) {
 				tot += B[i][j];
 				take--;
 			}
@@ -205,9 +249,8 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
 		// take the smallest remaining values
 		for (int k = 0; take && k < N; k++) {
 			int j = B_order[i][k];
-			if (j == i) continue; // already taken
-			if (fixed1[j]) continue; // already counted
-			if (fixed0[j]) continue; // cannot be used
+			if (j == i) continue; // already counted
+			if (fixed[j]) continue; // already counted
 			tot += B[i][j];
 			take--;
 		}
@@ -215,47 +258,24 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
 		ll[i] = tot;
 	}
 
-	// generate new contraints
+	// generate new Li contraints
 	thread_local static double L_rmatval[MAX_N*2];
-	thread_local static int L_rmatind[MAX_N*2];
-	int nn = 0;
     for (int i = 0; i < N; i++) {
-		if (fixed0[i] || fixed1[i]) continue;
-		int beg = nn * 2;
-		L_rmatind[beg + 0] = i_w(i);
+		int beg = i * 2;
 		L_rmatval[beg + 0] = 1;
-		L_rmatind[beg + 1] = i_x(i);
 		L_rmatval[beg + 1] = -ll[i];
-		nn++;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, nn*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
-}
+    _c(CPXcallbackaddusercuts(context, N, N*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
 
-static double Lp_rhs[MAX_N*MAX_N];
-static char Lp_sense[MAX_N*MAX_N];
-static int Lp_rmatbeg[MAX_N*MAX_N];
-static int Lp_purgeable[MAX_N*MAX_N];
-static int Lp_local[MAX_N*MAX_N];
-
-void init_Lp_data() {
-	fill_n(Lp_rhs, N*N, 0);
-	fill_n(Lp_sense, N*N, 'G');
-	fill_n(Lp_rmatbeg, N*N, 0);
-	fill_n(Lp_purgeable, N*N, CPX_USECUT_FORCE);
-	fill_n(Lp_local, N*N, 1);
-	for (int i=0; i<N*N; i++) Lp_rmatbeg[i] = i * 3;
-}
-
-void improve_local_L_pairs(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
 	// calculate all local L_jk
 	thread_local static double lljk[MAX_N][MAX_N];
-	for (int j=0; j<N; j++) if (fixed1[j]) for (int k=0; k<N; k++) {
-		if (fixed1[k] || fixed0[k]) continue;
+	int up = 0, down = 0;
+	for (int j=0; j<N; j++) for (int k=0; k<N; k++) {
 		int take = M;
 		double tot = 0;
 		// take all the fixed variables
 		for (int i = 0; take && i < N; i++) {
-			if (fixed1[i]) {
+			if (fixed[i]) {
 				tot += B[i][j] + B[i][k];
 				take--;
 			}
@@ -263,36 +283,42 @@ void improve_local_L_pairs(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fi
 		// take the smallest remaining values
 		for (int ord = 0; take && ord < N; ord++) {
 			int i = B_jk_order[j][k][ord];
-			if (fixed1[i]) continue; // already counted
-			if (fixed0[i]) continue; // cannot be taken
+			if (fixed[i]) continue; // already counted
 			tot += B[i][j] + B[i][k];
 			take--;
 		}
 		assert(take == 0);
 		lljk[j][k] = tot;
+		if (tot > ll[j]+ll[k]) up++;
+		else down++;
 	}
-
-	thread_local static double x[MAX_N], w[MAX_N];
-	_c(CPXcallbackgetrelaxationpoint(context, x, i_x(0), i_x(N-1), NULL));
-	_c(CPXcallbackgetrelaxationpoint(context, w, i_w(0), i_w(N-1), NULL));
 
 	// generate new Ljk contraints
-	thread_local static int Lp_rmatind[MAX_N*MAX_N*3];
-	thread_local static double Lp_rmatval[MAX_N*MAX_N*3];
-	int nn = 0, beg = 0;
-	for (int j=0; j<N; j++) if (fixed1[j]) for (int k=0; k<N; k++) {
-		if (fixed0[k] || fixed1[k]) continue;
+	int nn = N * (N - 1) / 2;
+	vector<double> rhs(nn, 0);
+	vector<char> sense(nn, 'G');
+	vector<int> rmatbeg(nn, 0);
+	vector<int> rmatind(nn*4, 0);
+	vector<double> rmatval(nn*4, 0);
+	vector<int> purgeable(nn, CPX_USECUT_FORCE);
+	vector<int> local(nn, 1);
+	int rcount = 0, beg = 0;
+	for (int j=0; j<N; j++) for (int k=j+1; k<N; k++) {
 		double Ljk = lljk[j][k];
-		if (w[j] + w[k] - Ljk * x[k] > 1e-3) continue;
-		Lp_rmatind[beg  ] = i_w(j);
-		Lp_rmatval[beg++] = 1;
-		Lp_rmatind[beg  ] = i_w(k);
-		Lp_rmatval[beg++] = 1;
-		Lp_rmatind[beg  ] = i_x(k);
-		Lp_rmatval[beg++] = -Ljk;
-		nn++;
+		rhs[rcount] = -Ljk;
+		rmatbeg[rcount++] = beg;
+		rmatind[beg  ] = i_w(j);
+		rmatval[beg++] = 1;
+		rmatind[beg  ] = i_w(k);
+		rmatval[beg++] = 1;
+		rmatind[beg  ] = i_x(j);
+		rmatval[beg++] = -Ljk;
+		rmatind[beg  ] = i_x(k);
+		rmatval[beg++] = -Ljk;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, nn*3, Lp_rhs, Lp_sense, Lp_rmatbeg, Lp_rmatind, Lp_rmatval, Lp_purgeable, Lp_local));
+	assert(rcount == nn);
+	assert(beg == nn*4);
+    _c(CPXcallbackaddusercuts(context, nn, nn*4, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), purgeable.data(), local.data()));
 }
 
 static char M_sense[MAX_N];
@@ -301,7 +327,7 @@ static int M_rmatind[MAX_N*(MAX_N+1)];
 static int M_purgeable[MAX_N];
 static int M_local[MAX_N];
 
-void init_M_data() {
+void init_local_M_data() {
 	fill_n(M_sense, N, 'L');
 	fill_n(M_rmatbeg, N, 0);
 	fill_n(M_rmatind, N*(N+1), 0);
@@ -317,26 +343,26 @@ void init_M_data() {
 	}
 }
 
-void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
+void improve_local_M(CPXCALLBACKCONTEXTptr context) {
+	// upperbound of the x variables at the local node
+	thread_local static double ub[MAX_N];
+	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
+
+	// keeps track of which variables are fixed to 1
+	thread_local static bool fixed[MAX_N];
+	for (int i=0; i<N; i++) fixed[i] = ub[i] < .5;
+	int num_fixed = count(fixed, fixed+N, true);
+	assert(num_fixed <= N-M); // should never fix more than N-M varaibles to 0
+
 	// calculate all local M_i
 	thread_local static double lm[MAX_N];
 	for (int i=0; i<N; i++) {
 		int take = M;
 		double tot = 0;
-		// take the biggest values fixed to 1
+		// take the biggest values not fixed to 0
 		for (int k = N-1; take && k >= 0; k--) {
 			int j = B_order[i][k];
-			if (fixed1[j]) {
-				tot += B[i][j];
-				take--;
-			}
-		}
-		// take the biggest remaining values
-		for (int k = N-1; take && k >= 0; k--) {
-			int j = B_order[i][k];
-			if (j == i) continue; // never take x_i
-			if (fixed1[j]) continue; // already taken
-			if (fixed0[j]) continue; // cannot be taken
+			if (j == i || fixed[j]) continue;
 			tot += B[i][j];
 			take--;
 		}
@@ -358,44 +384,19 @@ void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
     _c(CPXcallbackaddusercuts(context, N, N*(N+1), M_rhs, M_sense, M_rmatbeg, M_rmatind, M_rmatval, M_purgeable, M_local));
 }
 
-void cuts_generator0(CPXCALLBACKCONTEXTptr context) {
-	if (PARAM_LIVE_SOL) live_display(context);
-
+int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
 	// producing cuts more then once for the same node is wasteful
 	thread_local static long long prev_id = -1;
 	long long node_id;
 	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
-	if (node_id == prev_id) return;
+	if (node_id == prev_id) return 0;
 	else prev_id = node_id;
 
-	// lower/upperbound of the x variables at the local node
-	thread_local static double lb[MAX_N];
-	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
-	thread_local static double ub[MAX_N];
-	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
-	// keeps track of which variables are fixed to 0/1
-	thread_local static bool fixed1[MAX_N];
-	for (int i=0; i<N; i++) fixed1[i] = lb[i] > .5;
-	thread_local static bool fixed0[MAX_N];
-	for (int i=0; i<N; i++) fixed0[i] = ub[i] < .5;
-
 	if (PARAM_LOCAL_L)
-		improve_local_L(context, fixed0, fixed1);
-	if (PARAM_LOCAL_L_PAIRS)
-		improve_local_L_pairs(context, fixed0, fixed1);
+		improve_local_L(context);
 	if (PARAM_LOCAL_M)
-		improve_local_M(context, fixed0, fixed1);
-}
-
-double tot_callback_time = 0;
-
-int cuts_generator(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
-	CPXENVptr env = (CPXENVptr) userhandle;
-	double ts, te;
-	CPXgettime(env, &ts);
-	cuts_generator0(context);
-	CPXgettime(env, &te);
-	tot_callback_time += te - ts;
+		improve_local_M(context);
+	
 	return 0;
 }
 
@@ -403,11 +404,8 @@ int main() {
 	read_inputs();
 
 	preorder_B();
-	if (PARAM_LOCAL_L_PAIRS) preorder_B_pairs();
-
-	if (PARAM_LOCAL_L) init_L_data();
-	if (PARAM_LOCAL_L_PAIRS) init_Lp_data();
-	if (PARAM_LOCAL_M) init_M_data();
+	init_local_L_data();
+	init_local_M_data();
 
 	int status;
     CPXENVptr env = CPXopenCPLEX(&status);
@@ -426,14 +424,16 @@ int main() {
 
 	add_cons_M(env, lp);
 	add_cons_xw(env, lp);
-	if (!PARAM_LOCAL_L) // not needed as they are added locally
+	if (!PARAM_LOCAL_L) { // not needed as they are added locally
 		add_cons_L(env, lp);
+		add_cons_L_jk(env, lp);
+	}
 
 	// write problem
-	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
+	_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
 	// add a callback to generate cuts
-	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cuts_generator, env));
+	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cuts_generator, NULL));
 
     // solve as mip
 	if (PARAM_TIME_LIMIT != -1)
@@ -446,30 +446,24 @@ int main() {
 	_c(CPXgettime(env, &t_end));
 
     // print solution
-    double objval, best_boud;
+    double objval;
 	int solstat;
 	vector<double> sol(N + N);
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
-	_c(CPXgetbestobjval(env, lp, &best_boud));
 
-	cout << "time in user callback = " << tot_callback_time << endl;
-	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
-	cerr << N << endl;
+	cerr << N << " " << M << endl;
 	for (int i=0; i<N; i++) {
-		cerr << int(sol[i_x(i)]) << endl;
+		cout << "  x_" << i << " = " << int(sol[i_x(i)]) << endl;
+		cerr << i << " " << int(sol[i_x(i)]) << endl;
 	}
 	cerr << "# obj = " << objval << endl;
-	if (solstat != CPXMIP_OPTIMAL)
-		cerr << "# bound = " << best_boud << endl;
-	cerr << "# time = " << (t_end - t_start) << ", in cb = " << tot_callback_time << endl;
-	cerr << "# cb"
+	cerr << "# time = " << (t_end - t_start) << endl;
+	cerr << "# cb2 all pairs"
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
 		<< ", local L = " << PARAM_LOCAL_L
-		<< ", local L pairs = " << PARAM_LOCAL_L_PAIRS
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", tl = " << PARAM_TIME_LIMIT << endl;
-	cerr << "# n1 = " << M << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));

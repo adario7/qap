@@ -16,21 +16,18 @@ if __name__=='__main__':
 		n = int(params[0])
 		n1, n2 = int(math.sqrt(n)), int(math.sqrt(n))
 
-	F = np.zeros((n1, n2), dtype=float)
-	S = np.zeros((n1, n2), dtype=float)
-	for i in range(n):
-		v = float(f.readline())
-		F[int(i/n2), i%n2] = v
-	for i in range(n):
-		v = float(f.readline())
-		S[int(i/n2), i%n2] = v
+	def mkplot(ax, vmin=None, vmax=None):
+		S = np.zeros((n1, n2), dtype=float)
+		for i in range(n):
+			v = float(f.readline())
+			S[int(i/n2), i%n2] = v
+		sns.heatmap(S, vmin=vmin, vmax=vmax, linewidths=.5, linecolor='#000', cmap='Greys', cbar=False, square=True, xticklabels=False, yticklabels=False, ax=ax)
+
+
+	fig, (ax1, ax2, ax3) = plt.subplots(1,3, figsize=(12, 4))
+	mkplot(ax1, 0, 1)
+	mkplot(ax2, 0, 1)
+	mkplot(ax3)
+	plt.show()
 
 	f.close()
-
-
-	fig, (ax1, ax2) = plt.subplots(1,2)
-	
-	sns.heatmap(F, vmin=0, vmax=1, linewidths=.5, linecolor='#000', cmap='Greys', cbar=False, square=True, xticklabels=False, yticklabels=False, ax=ax1)
-	#plt.savefig(f'images/tai{n}c_{n1}x{n2}_{d}.eps', format='eps', bbox_inches='tight')
-	sns.heatmap(S, vmin=0, vmax=1, linewidths=.5, linecolor='#000', cmap='Greys', cbar=False, square=True, xticklabels=False, yticklabels=False, ax=ax2)
-	plt.show()
