@@ -180,8 +180,7 @@ int main() {
 	cout << "solution = " << objval << endl;
 	cerr << N << " " << M << endl;
 	for (int i=0; i<N; i++) {
-		cout << "  x_" << i << " = " << int(sol[i_x(i)]) << endl;
-		cerr << i << " " << int(sol[i_x(i)]) << endl;
+		cerr << i << " " << int(round(sol[i_x(i)])) << endl;
 	}
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;

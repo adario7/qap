@@ -10,8 +10,6 @@ using namespace std;
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
 
 void live_display(CPXCALLBACKCONTEXTptr context) {
-	if (rand()%100) return;
-
 	long long node_id;
 	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
 
