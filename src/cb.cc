@@ -19,17 +19,19 @@ constexpr bool PARAM_DYNAMIC_SEARCH = true;
 // greatly improves the LP
 constexpr bool PARAM_LOCAL_L = true;
 // makes nodes enumeration slower, slightly improves the LP
-constexpr bool PARAM_LOCAL_L_PAIRS = true;
+constexpr bool PARAM_LOCAL_L_PAIRS = false;
 // makes nodes enumeration slower, slightly improves the LP
-constexpr bool PARAM_LOCAL_L_ALL = true;
+constexpr bool PARAM_LOCAL_L_ALL = false;
 // makes nodes enumeration slighlty slower, improves the LP
 constexpr bool PARAM_LOCAL_M = true;
 // whether cuts are calculated only once per node, even after a new relaxation
-constexpr bool PARAM_CUT_ONCE = true;
+constexpr bool PARAM_CUT_ONCE = false;
 // -1 to disable
 constexpr double PARAM_TIME_LIMIT = 45;
 // display nodes as they are explored
 constexpr bool PARAM_LIVE_SOL = false;
+// don't bother adding cuts if less then a minimum are found
+constexpr bool PARAM_CUTS_MIN = 4;
 
 constexpr double EPS = 1; // add cuts that are violated by this much
 constexpr int CUT_TYPE = CPX_USECUT_FORCE;
@@ -193,7 +195,7 @@ void init_L_data() {
 	}
 }
 
-void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
+void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
 	// calculate all local L_i
 	thread_local static double ll[MAX_N];
 	for (int i=0; i<N; i++) {
@@ -228,6 +230,8 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
 	int nn = 0;
     for (int i = 0; i < N; i++) {
 		if (fixed0[i] || fixed1[i]) continue;
+		double delta = w[i] - ll[i] * x[i];
+		if (delta >= -EPS) continue;
 		int beg = nn * 2;
 		L_rmatind[beg + 0] = i_w(i);
 		L_rmatval[beg + 0] = 1;
@@ -235,7 +239,8 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) 
 		L_rmatval[beg + 1] = -ll[i];
 		nn++;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, nn*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
+	if (nn >= PARAM_CUTS_MIN)
+    	_c(CPXcallbackaddusercuts(context, nn, nn*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
 }
 
 static char Lp_sense[MAX_N*MAX_N];
@@ -326,7 +331,8 @@ void improve_local_L_pairs(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fi
 		nn++;
 		tot_lp_cuts++;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, nn*3, Lp_rhs, Lp_sense, Lp_rmatbeg, Lp_rmatind, Lp_rmatval, Lp_purgeable, Lp_local));
+	if (nn >= PARAM_CUTS_MIN)
+		_c(CPXcallbackaddusercuts(context, nn, nn*3, Lp_rhs, Lp_sense, Lp_rmatbeg, Lp_rmatind, Lp_rmatval, Lp_purgeable, Lp_local));
 }
 
 static char La_sense[MAX_N];
@@ -449,7 +455,8 @@ void improve_local_L_all(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixe
 		nn++;
 		tot_la_cuts++;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, beg, La_rhs, La_sense, La_rmatbeg, La_rmatind, La_rmatval, La_purgeable, La_local));
+	if (nn >= PARAM_CUTS_MIN)
+		_c(CPXcallbackaddusercuts(context, nn, beg, La_rhs, La_sense, La_rmatbeg, La_rmatind, La_rmatval, La_purgeable, La_local));
 }
 
 static char M_sense[MAX_N];
@@ -521,18 +528,18 @@ void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, 
 		nn++;
 		tot_m_cuts++;
 	}
-    _c(CPXcallbackaddusercuts(context, nn, nn*(N+1), M_rhs, M_sense, M_rmatbeg, M_rmatind, M_rmatval, M_purgeable, M_local));
+	if (nn >= PARAM_CUTS_MIN)
+		_c(CPXcallbackaddusercuts(context, nn, nn*(N+1), M_rhs, M_sense, M_rmatbeg, M_rmatind, M_rmatval, M_purgeable, M_local));
 }
 
 void cuts_generator0(CPXCALLBACKCONTEXTptr context) {
 	if (PARAM_LIVE_SOL) live_display(context);
 
 	// determine if we have already seen this node (best effort: only thread local)
-	thread_local static long long prev_prev_id = -1, prev_id = -1;
+	thread_local static long long prev_id = -1;
 	long long node_id;
 	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
-	bool old_node = node_id == prev_id, very_old_node = node_id == prev_prev_id;
-	prev_prev_id = prev_id;
+	bool old_node = node_id == prev_id;
 	prev_id = node_id;
 
 	//double obj;
@@ -540,8 +547,7 @@ void cuts_generator0(CPXCALLBACKCONTEXTptr context) {
 	//cout << node_id << " \t-> " << tot_m_cuts << "/" << tot_lp_cuts << "/" << tot_la_cuts << " \t -> " << obj << "  \t/ " << old_node << very_old_node << endl;
 
 	// producing cuts more then once for the same node could be wasteful
-	if (PARAM_CUT_ONCE && very_old_node) return;
-	if (PARAM_CUT_ONCE && old_node && !PARAM_LOCAL_L_PAIRS && !PARAM_LOCAL_L_ALL) return;
+	if (PARAM_CUT_ONCE && old_node) return;
 
 	// lower/upperbound of the x variables at the local node
 	thread_local static double lb[MAX_N];
@@ -556,18 +562,18 @@ void cuts_generator0(CPXCALLBACKCONTEXTptr context) {
 
 	// solution at the current node
 	thread_local static double x[MAX_N], w[MAX_N];
-	if (PARAM_LOCAL_L_PAIRS || PARAM_LOCAL_L_ALL || PARAM_LOCAL_M) {
+	//if (PARAM_LOCAL_L_PAIRS || PARAM_LOCAL_L_ALL || PARAM_LOCAL_M) {
 		_c(CPXcallbackgetrelaxationpoint(context, x, i_x(0), i_x(N-1), NULL));
 		_c(CPXcallbackgetrelaxationpoint(context, w, i_w(0), i_w(N-1), NULL));
-	}
+	//}
 
-	if (PARAM_LOCAL_L && !old_node) // these cuts are always the same
-		improve_local_L(context, fixed0, fixed1);
+	if (PARAM_LOCAL_L) // these cuts are always the same
+		improve_local_L(context, fixed0, fixed1, x, w);
 	if (PARAM_LOCAL_M)
 		improve_local_M(context, fixed0, fixed1, x, w);
-	if (PARAM_LOCAL_L_PAIRS && old_node)
+	if (PARAM_LOCAL_L_PAIRS)
 		improve_local_L_pairs(context, fixed0, fixed1, x, w);
-	if (PARAM_LOCAL_L_ALL && old_node)
+	if (PARAM_LOCAL_L_ALL)
 		improve_local_L_all(context, fixed0, fixed1, x, w);
 }
 
