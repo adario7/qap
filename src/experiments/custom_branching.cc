@@ -32,8 +32,6 @@ constexpr double PARAM_TIME_LIMIT = 60;
 constexpr bool PARAM_LIVE_SOL = false;
 // don't bother adding cuts if less then a minimum are found
 constexpr bool PARAM_CUTS_MIN = 4;
-// single vs multi thread
-constexpr bool PARAM_SINGLE_THREAD = true;
 
 constexpr double EPS = 1; // add cuts that are violated by this much
 constexpr int CUT_TYPE = CPX_USECUT_FORCE;
@@ -534,8 +532,10 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 
 	// solution at the current node
 	thread_local static double x[MAX_N], w[MAX_N];
-	_c(CPXcallbackgetrelaxationpoint(context, x, i_x(0), i_x(N-1), NULL));
-	_c(CPXcallbackgetrelaxationpoint(context, w, i_w(0), i_w(N-1), NULL));
+	//if (PARAM_LOCAL_L_PAIRS || PARAM_LOCAL_L_ALL || PARAM_LOCAL_M) {
+		_c(CPXcallbackgetrelaxationpoint(context, x, i_x(0), i_x(N-1), NULL));
+		_c(CPXcallbackgetrelaxationpoint(context, w, i_w(0), i_w(N-1), NULL));
+	//}
 
 	if (PARAM_LOCAL_L) // these cuts are always the same
 		improve_local_L(context, fixed0, fixed1, x, w);
@@ -547,13 +547,44 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 		improve_local_L_all(context, fixed0, fixed1, x, w);
 }
 
+void branch_strategy(CPXCALLBACKCONTEXTptr context) {
+	thread_local static bool fixed0[MAX_N], fixed1[MAX_N];
+	find_fixings(context, fixed0, fixed1);
+
+	double obj;
+	_c(CPXcallbackgetrelaxationpoint(context, NULL, 0, -1, &obj));
+
+	int best_i = -1;
+	double best_gap = -1;
+	for (int i=0; i<N; i++) {
+		if (fixed0[i] || fixed1[i]) continue;
+		double gap = calc_local_M(i, fixed0, fixed1) - calc_local_L(i, fixed0, fixed1);
+		if (gap > best_gap) {
+			best_i = i;
+			best_gap = gap;
+		}
+	}
+	assert(best_i != -1);
+
+	char varlu = 'L';
+	double varbd = 1;
+	_c(CPXcallbackmakebranch(context, 1, &best_i, &varlu, &varbd, 0, 0, NULL, NULL, NULL, NULL, NULL, obj, NULL));
+	varlu = 'U';
+	varbd = 0;
+	_c(CPXcallbackmakebranch(context, 1, &best_i, &varlu, &varbd, 0, 0, NULL, NULL, NULL, NULL, NULL, obj, NULL));
+}
+
 double tot_callback_time = 0;
 
 int cplex_callback(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
 	CPXENVptr env = (CPXENVptr) userhandle;
 	double ts, te;
 	CPXgettime(env, &ts);
-	cuts_generator(context);
+	if (contextid == CPX_CALLBACKCONTEXT_RELAXATION) {
+		cuts_generator(context);
+	} else {
+		branch_strategy(context);
+	}
 	CPXgettime(env, &te);
 	tot_callback_time += te - ts;
 	return 0;
@@ -576,9 +607,9 @@ int main() {
     CPXLPptr lp = CPXcreateprob(env, &status, "qap");
 	if (status) abort();
 
-	_c(CPXsetintparam(env, CPXPARAM_ScreenOutput, CPX_ON)); // enable solver logging
-	if (PARAM_SINGLE_THREAD)
-		_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
+	// enable solver logging
+	_c(CPXsetintparam(env, CPXPARAM_ScreenOutput, CPX_ON));
+	_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
 
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 
@@ -594,7 +625,8 @@ int main() {
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
 	// add a callback to generate cuts
-	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
+	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION | CPX_CALLBACKCONTEXT_BRANCHING,
+				cplex_callback, env));
 
     // solve as mip
 	_c(CPXsetintparam(env, CPXPARAM_Preprocessing_Symmetry, 5));
