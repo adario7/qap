@@ -9,9 +9,7 @@
 #include <ilcplex/cplex.h>
 
 #include <inputs.hh>
-
-// single vs multi thread
-constexpr bool PARAM_SINGLE_THREAD = false;
+#include <params.hh>
 
 #define _c(what) if(what) abort()
 
@@ -168,7 +166,8 @@ int main() {
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
-	//_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
+	if (!PARAM_DYNAMIC_SEARCH)
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));

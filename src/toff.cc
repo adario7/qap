@@ -8,15 +8,9 @@
 #include <ilcplex/cplex.h>
 
 #include <inputs.hh>
+#include <params.hh>
 
 #define _c(what) if(what) abort()
-
-// seems faster on bigger problems
-constexpr bool PARAM_DYNAMIC_SEARCH = true;
-// -1 to disable
-constexpr double PARAM_TIME_LIMIT = -1;
-// single vs multi thread
-constexpr bool PARAM_SINGLE_THREAD = false;
 
 using namespace std;
 
