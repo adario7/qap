@@ -26,14 +26,14 @@ constexpr bool PARAM_LOCAL_L_ALL = false;
 constexpr bool PARAM_LOCAL_M = true;
 // whether cuts are calculated only once per node, even after a new relaxation
 constexpr bool PARAM_CUT_ONCE = false;
-// -1 to disable
-constexpr double PARAM_TIME_LIMIT = 60;
 // display nodes as they are explored
 constexpr bool PARAM_LIVE_SOL = false;
 // don't bother adding cuts if less then a minimum are found
 constexpr bool PARAM_CUTS_MIN = 4;
+// -1 to disable
+constexpr double PARAM_TIME_LIMIT = -1;
 // single vs multi thread
-constexpr bool PARAM_SINGLE_THREAD = true;
+constexpr bool PARAM_SINGLE_THREAD = false;
 
 constexpr double EPS = 1; // add cuts that are violated by this much
 constexpr int CUT_TYPE = CPX_USECUT_FORCE;
@@ -635,6 +635,7 @@ int main() {
 		<< ", local L all = " << PARAM_LOCAL_L_ALL
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", cut once = " << PARAM_CUT_ONCE
+		<< ", single thread = " << PARAM_SINGLE_THREAD
 		<< ", tl = " << PARAM_TIME_LIMIT << endl;
 	cerr << "# n1 = " << M << endl;
 

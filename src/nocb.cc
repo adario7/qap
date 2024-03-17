@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
-#include <functional>
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
@@ -10,6 +9,9 @@
 #include <ilcplex/cplex.h>
 
 #include <inputs.hh>
+
+// single vs multi thread
+constexpr bool PARAM_SINGLE_THREAD = false;
 
 #define _c(what) if(what) abort()
 
@@ -150,7 +152,8 @@ int main() {
 
 	// enable solver logging
 	_c(CPXsetintparam(env, CPXPARAM_ScreenOutput, CPX_ON));
-	_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
+	if (PARAM_SINGLE_THREAD)
+		_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
 
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 

@@ -14,7 +14,9 @@
 // seems faster on bigger problems
 constexpr bool PARAM_DYNAMIC_SEARCH = true;
 // -1 to disable
-constexpr double PARAM_TIME_LIMIT = 45;
+constexpr double PARAM_TIME_LIMIT = -1;
+// single vs multi thread
+constexpr bool PARAM_SINGLE_THREAD = false;
 
 using namespace std;
 
@@ -142,7 +144,8 @@ int main() {
 
 	// enable solver logging
 	_c(CPXsetintparam(env, CPX_PARAM_SCRIND, CPX_ON));
-	_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
+	if (PARAM_SINGLE_THREAD)
+		_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
 
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 
