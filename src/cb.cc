@@ -557,10 +557,6 @@ int main(int argc, char** argv) {
     CPXLPptr lp = CPXcreateprob(env, &status, "qap");
 	if (status) abort();
 
-	_c(CPXsetintparam(env, CPXPARAM_ScreenOutput, CPX_ON)); // enable solver logging
-	if (PARAM_SINGLE_THREAD)
-		_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
-
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 
 	add_variables_x(env, lp);
@@ -568,21 +564,13 @@ int main(int argc, char** argv) {
 
 	add_cons_M(env, lp);
 	add_cons_xw(env, lp);
-	if (!PARAM_LOCAL_L) // not needed as they are added locally
-		add_cons_L(env, lp);
-
-	// write problem
-	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
+	add_cons_L(env, lp);
 
 	// add a callback to generate cuts
 	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
 
     // solve as mip
-	_c(CPXsetintparam(env, CPXPARAM_Preprocessing_Symmetry, 5));
-	if (PARAM_TIME_LIMIT != -1)
-		_c(CPXsetdblparam(env, CPXPARAM_TimeLimit, PARAM_TIME_LIMIT));
-	if (!PARAM_DYNAMIC_SEARCH)
-		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
+	apply_parameters(env, lp);
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));
@@ -617,7 +605,10 @@ int main(int argc, char** argv) {
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", cut once = " << PARAM_CUT_ONCE
 		<< ", single thread = " << PARAM_SINGLE_THREAD
-		<< ", tl = " << PARAM_TIME_LIMIT << endl;
+		<< ", opportunistic = " << PARAM_OPPORTUNISTIC
+		<< ", tl = " << PARAM_TIME_LIMIT
+		<< ", ml = " << PARAM_MEMLIMIT
+		<< endl;
 	cerr << "# n1 = " << M << endl;
 
     // clean up

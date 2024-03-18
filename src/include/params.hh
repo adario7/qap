@@ -1,3 +1,5 @@
+#include <ilcplex/cplex.h>
+
 // seems faster on bigger problems
 extern bool PARAM_DYNAMIC_SEARCH;
 // greatly improves the LP
@@ -16,7 +18,13 @@ extern int PARAM_CUTS_MIN;
 extern double PARAM_TIME_LIMIT;
 // single vs multi thread
 extern bool PARAM_SINGLE_THREAD;
+// deterministic vs opportunistic
+extern bool PARAM_OPPORTUNISTIC;
+// memory limit
+extern int PARAM_MEMLIMIT;
 // display nodes as they are explored
 extern bool PARAM_LIVE_SOL;
 
 void read_parameters(int argc, char** argv);
+
+void apply_parameters(CPXENVptr env, CPXLPptr lp);
