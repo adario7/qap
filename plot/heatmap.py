@@ -4,18 +4,22 @@ import seaborn as sns
 import sys, math
 
 if __name__=='__main__':
-	assert(len(sys.argv) == 2)
 	f = open(sys.argv[1], 'r')
 
 	params = f.readline().split(' ')
-	if len(params) == 2:
+	if len(sys.argv) > 3:
+		n1 = int(sys.argv[2])
+		n2 = int(sys.argv[3])
+		n = n1*n2
+	elif len(params) == 2:
 		n1 = int(params[0])
 		n2 = int(params[1])	
 		n = n1*n2
 	else:
 		n = int(params[0])
 		n1, n2 = int(math.sqrt(n)), int(math.sqrt(n))
-
+	print(f"{n1}x{n2}")
+	
 	S = np.zeros((n1, n2), dtype=float)
 	for i in range(n):
 		v = float(f.readline())

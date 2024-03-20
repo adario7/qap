@@ -200,6 +200,8 @@ double calc_local_L(int i, bool* fixed0, bool* fixed1) {
 	return tot;
 }
 
+atomic_int tot_l_cuts = 0;
+
 void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
 	thread_local static double L_rmatval[MAX_N*2];
 	thread_local static int L_rmatind[MAX_N*2];
@@ -216,8 +218,10 @@ void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, 
 		L_rmatval[beg + 1] = -ll;
 		nn++;
 	}
-	if (nn >= PARAM_CUTS_MIN)
+	if (nn >= PARAM_CUTS_MIN) {
     	_c(CPXcallbackaddusercuts(context, nn, nn*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
+		tot_l_cuts += nn;
+	}
 }
 
 static char Lp_sense[MAX_N*MAX_N];
@@ -564,7 +568,8 @@ int main(int argc, char** argv) {
 
 	add_cons_M(env, lp);
 	add_cons_xw(env, lp);
-	add_cons_L(env, lp);
+	if (!PARAM_LOCAL_L)
+		add_cons_L(env, lp);
 
 	// add a callback to generate cuts
 	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
@@ -587,16 +592,18 @@ int main(int argc, char** argv) {
 	cout << "time in user callback = " << tot_callback_time << endl;
 	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
-	cout << "applied lp / la / m cuts = " << tot_lp_cuts << " / " << tot_la_cuts << " / " << tot_m_cuts << endl;
+	cout << "applied l / lp / la / m cuts = " << tot_l_cuts << " / " << tot_lp_cuts << " / " << tot_la_cuts << " / " << tot_m_cuts << endl;
 	cerr << N << endl;
 	for (int i=0; i<N; i++) {
 		cerr << int(round(sol[i_x(i)])) << endl;
 	}
+	cerr << "# status = " << solstat << endl;
 	cerr << "# obj = " << objval << endl;
 	if (solstat != CPXMIP_OPTIMAL)
 		cerr << "# bound = " << best_boud << endl;
 	cerr << "# time = " << (t_end - t_start) << ", in cb = " << tot_callback_time << endl;
 	cerr << "# nodes = " << nodecnt << endl;
+	cerr << "# l / lp / la / m cuts = " << tot_l_cuts << " / " << tot_lp_cuts << " / " << tot_la_cuts << " / " << tot_m_cuts << endl;
 	cerr << "# cb"
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
 		<< ", local L = " << PARAM_LOCAL_L

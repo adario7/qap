@@ -58,7 +58,7 @@ def main():
     B = B_generator(n, args.n1, args.n2)
 
     # Write matrices to file
-    filename = f"tai{n}c_{args.n1}x{args.n2}_{args.d}.txt"
+    filename = f"tai{n}c_{args.n1}x{args.n2}_{args.d}"
     with open(filename, 'w') as file:
         file.write(f"{n}\n")
         for row in A:

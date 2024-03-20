@@ -26,7 +26,7 @@ bool PARAM_SINGLE_THREAD = false;
 // deterministic vs opportunistic
 bool PARAM_OPPORTUNISTIC = false;
 // memory limit
-int PARAM_MEMLIMIT = 14*1024 - 64;
+int PARAM_MEMLIMIT = 14*1024 - 256;
 // display nodes as they are explored
 bool PARAM_LIVE_SOL = false;
 
@@ -90,9 +90,9 @@ void apply_parameters(CPXENVptr env, CPXLPptr lp) {
 		_c(CPXsetintparam(env, CPXPARAM_Parallel, CPX_PARALLEL_OPPORTUNISTIC));
 	}
 	if (PARAM_MEMLIMIT > 0) {
-		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_File, 3));
-		int tot = PARAM_MEMLIMIT, wm = min(PARAM_MEMLIMIT, 2*1024);
-		_c(CPXsetdblparam(env, CPXPARAM_WorkMem, wm));
-		_c(CPXsetdblparam(env, CPXPARAM_MIP_Limits_TreeMemory, tot - wm));
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_File, 2));
+		_c(CPXsetintparam(env, CPXPARAM_Emphasis_Memory, 1));
+		_c(CPXsetdblparam(env, CPXPARAM_WorkMem, PARAM_MEMLIMIT));
+
 	}
 }
