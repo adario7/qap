@@ -16,7 +16,7 @@
 // parameters
 
 constexpr double EPS = 1; // add cuts that are violated by this much
-constexpr int CUT_TYPE = CPX_USECUT_FORCE;
+constexpr int CUT_TYPE = CPX_USECUT_FILTER;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
@@ -468,7 +468,7 @@ void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, 
 		double delta = -w[i] - lm[i];
 		for (int j = 0; j < N; j++)
 			delta += x[j] * (B[i][j] + (j==i ? lm[i] : 0));
-		if (delta < EPS) continue;
+		if (delta <= EPS) continue;
 
 		int beg = nn * (N+1);
 		M_rhs[nn] = lm[i];
@@ -613,6 +613,8 @@ int main(int argc, char** argv) {
 		<< ", cut once = " << PARAM_CUT_ONCE
 		<< ", single thread = " << PARAM_SINGLE_THREAD
 		<< ", opportunistic = " << PARAM_OPPORTUNISTIC
+		<< ", eps = " << EPS
+		<< ", cut type = " << CUT_TYPE
 		<< ", tl = " << PARAM_TIME_LIMIT
 		<< ", ml = " << PARAM_MEMLIMIT
 		<< endl;

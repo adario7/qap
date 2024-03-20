@@ -127,7 +127,8 @@ void add_cons_and3(CPXENVptr env, CPXLPptr lp) {
     _c(CPXaddrows(env, lp, 0, N*N, 3*N*N, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
-int main() {
+int main(int argc, char **argv) {
+	read_parameters(argc, argv);
 	read_inputs();
 
 	int status;
@@ -137,10 +138,6 @@ int main() {
 	if (status) abort();
 
 	// enable solver logging
-	_c(CPXsetintparam(env, CPX_PARAM_SCRIND, CPX_ON));
-	if (PARAM_SINGLE_THREAD)
-		_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
-
     _c(CPXchgobjsen(env, lp, CPX_MIN));
 
 	add_variables_x(env, lp);
@@ -155,10 +152,7 @@ int main() {
 	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
-	if (!PARAM_DYNAMIC_SEARCH)
-		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_Search, CPX_MIPSEARCH_TRADITIONAL));
-	if (PARAM_TIME_LIMIT != -1)
-		_c(CPXsetdblparam(env, CPXPARAM_TimeLimit, PARAM_TIME_LIMIT));
+	apply_parameters(env, lp);
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
     _c(CPXmipopt(env, lp));
@@ -170,11 +164,13 @@ int main() {
 	vector<double> sol(N*N + N);
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
 
+	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
 	cerr << N << " " << M << endl;
 	for (int i=0; i<N; i++) {
 		cerr << i << " " << int(round(sol[i_x(i)])) << endl;
 	}
+	cerr << "# status = " << solstat << endl;
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
 	cerr << "# toff, no dynamic search" << endl;
