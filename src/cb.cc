@@ -13,18 +13,46 @@
 #include <live.hh>
 #include <params.hh>
 
-// parameters
-
+// static paramteres
 constexpr double EPS = 1; // add cuts that are violated by this much
-constexpr int CUT_TYPE = CPX_USECUT_FILTER;
+constexpr int CUT_TYPE = CPX_USECUT_FORCE;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
 
 using namespace std;
 
+constexpr int MAX_RC = MAX_N + MAX_N + MAX_N*MAX_N + MAX_N;
+constexpr int MAX_NZC = MAX_N*2 + MAX_N*(MAX_N+1) + MAX_N*MAX_N*3 + MAX_N*(MAX_N+1);
+
+struct relpoint_t {
+	double x[MAX_N], w[MAX_N];
+	double lb[MAX_N], ub[MAX_N];
+	bool fixed0[MAX_N], fixed1[MAX_N];
+};
+
+struct cutbuf_t {
+	int rc = 0, nzc = 0;
+	int n_l = 0, n_m = 0, n_p = 0, n_a = 0;
+	double rhs[MAX_RC];
+	char sense[MAX_RC];
+	int rmatbeg[MAX_RC];
+	int rmatind[MAX_NZC];
+	double rmatval[MAX_NZC];
+};
+
+// proerdered values
 int B_order[MAX_N][MAX_N];
 int B_jk_order[MAX_N][MAX_N][MAX_N];
+// global buffers
+int gb_purgeable[MAX_RC];
+int gb_local[MAX_RC];
+// total cuts statistics
+atomic_int tot_l_cuts = 0;
+atomic_int tot_p_cuts = 0;
+atomic_int tot_a_cuts = 0;
+atomic_int tot_m_cuts = 0;
+double tot_callback_time = 0;
 
 int i_x(int i) {
 	assert(0 <= i && i < N);
@@ -34,6 +62,24 @@ int i_x(int i) {
 int i_w(int i) {
 	assert(0 <= i && i < N);
 	return N + i;
+}
+
+void cut_begin(cutbuf_t& buf, double rhs, char sense) {
+	buf.rhs[buf.rc] = rhs;
+	buf.sense[buf.rc] = sense;
+	buf.rmatbeg[buf.rc] = buf.nzc;
+	buf.rc++;
+}
+
+void cut_add(cutbuf_t& buf, int rmatind, double rmatval) {
+	buf.rmatind[buf.nzc] = rmatind;
+	buf.rmatval[buf.nzc] = rmatval;
+	buf.nzc++;
+}
+
+void init_global_buffers() {
+	fill_n(gb_purgeable, MAX_RC, CUT_TYPE);
+	fill_n(gb_local, MAX_RC, 1);
 }
 
 void preorder_B() {
@@ -159,25 +205,7 @@ void add_cons_L(CPXENVptr env, CPXLPptr lp) {
     _c(CPXaddrows(env, lp, 0, N, N*2, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
-static double L_rhs[MAX_N];
-static char L_sense[MAX_N];
-static int L_rmatbeg[MAX_N];
-static int L_purgeable[MAX_N];
-static int L_local[MAX_N];
-
-void init_L_data() {
-	fill_n(L_rhs, N, 0);
-	fill_n(L_sense, N, 'G');
-	fill_n(L_rmatbeg, N, 0);
-	fill_n(L_purgeable, N, CUT_TYPE);
-	fill_n(L_local, N, 1);
-    for (int i = 0; i < N; i++) {
-		int beg = i * 2;
-		L_rmatbeg[i] = beg;
-	}
-}
-
-double calc_local_L(int i, bool* fixed0, bool* fixed1) {
+double calc_local_L(int i, const bool* fixed0, const bool* fixed1) {
 	int take = M;
 	double tot = 0;
 	// take all the fixed variables
@@ -200,44 +228,65 @@ double calc_local_L(int i, bool* fixed0, bool* fixed1) {
 	return tot;
 }
 
-atomic_int tot_l_cuts = 0;
-
-void improve_local_L(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
+void calc_L_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
 	thread_local static double L_rmatval[MAX_N*2];
 	thread_local static int L_rmatind[MAX_N*2];
-	int nn = 0;
     for (int i = 0; i < N; i++) {
-		if (fixed0[i] || fixed1[i]) continue;
-		double ll = calc_local_L(i, fixed0, fixed1);
-		double delta = w[i] - ll * x[i];
-		if (delta >= -EPS) continue;
-		int beg = nn * 2;
-		L_rmatind[beg + 0] = i_w(i);
-		L_rmatval[beg + 0] = 1;
-		L_rmatind[beg + 1] = i_x(i);
-		L_rmatval[beg + 1] = -ll;
-		nn++;
-	}
-	if (nn >= PARAM_CUTS_MIN) {
-    	_c(CPXcallbackaddusercuts(context, nn, nn*2, L_rhs, L_sense, L_rmatbeg, L_rmatind, L_rmatval, L_purgeable, L_local));
-		tot_l_cuts += nn;
+		if (rp.fixed0[i] || rp.fixed1[i]) continue;
+		double ll = calc_local_L(i, rp.fixed0, rp.fixed1);
+		double delta = rp.w[i] - ll * rp.x[i];
+		if (delta > -EPS) continue;
+
+		cut_begin(buf, 0, 'G');
+		cut_add(buf, i_w(i), 1);
+		cut_add(buf, i_x(i), -ll);
+		buf.n_l++;
 	}
 }
 
-static char Lp_sense[MAX_N*MAX_N];
-static int Lp_rmatbeg[MAX_N*MAX_N];
-static int Lp_purgeable[MAX_N*MAX_N];
-static int Lp_local[MAX_N*MAX_N];
-
-void init_Lp_data() {
-	fill_n(Lp_sense, N*N, 'G');
-	fill_n(Lp_rmatbeg, N*N, 0);
-	fill_n(Lp_purgeable, N*N, CUT_TYPE);
-	fill_n(Lp_local, N*N, 1);
-	for (int i=0; i<N*N; i++) Lp_rmatbeg[i] = i * 3;
+double calc_local_M(int i, const bool* fixed0, const bool* fixed1) {
+	int take = M;
+	double tot = 0;
+	// take the biggest values fixed to 1
+	for (int k = N-1; take && k >= 0; k--) {
+		int j = B_order[i][k];
+		if (fixed1[j]) {
+			tot += B[i][j];
+			take--;
+		}
+	}
+	// take the biggest remaining values
+	for (int k = N-1; take && k >= 0; k--) {
+		int j = B_order[i][k];
+		if (j == i) continue; // never take x_i
+		if (fixed1[j]) continue; // already taken
+		if (fixed0[j]) continue; // cannot be taken
+		tot += B[i][j];
+		take--;
+	}
+	assert(take == 0);
+	return tot;
 }
 
-double calc_local_Ljk(int j, int k, bool* fixed0, bool* fixed1) {
+void calc_M_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
+    for (int i = 0; i < N; i++) {
+		if (rp.fixed0[i] || rp.fixed1[i]) continue;
+		double lm = calc_local_M(i, rp.fixed0, rp.fixed1);
+		double delta = -rp.w[i] - lm;
+		for (int j = 0; j < N; j++)
+			delta += rp.x[j] * (B[i][j] + (j==i ? lm : 0));
+		if (delta < EPS) continue;
+
+		cut_begin(buf, lm, 'L');
+		for (int j = 0; j < N; j++) {
+			cut_add(buf, i_x(j), B[i][j] + (i==j ? lm : 0));
+		}
+		cut_add(buf, i_w(i), -1);
+		buf.n_m++;
+	}
+}
+
+double calc_local_Ljk(int j, int k, const bool* fixed0, const bool* fixed1) {
 	int take = M;
 	double tot = 0;
 	// take all the fixed variables
@@ -260,46 +309,23 @@ double calc_local_Ljk(int j, int k, bool* fixed0, bool* fixed1) {
 	return tot;
 }
 
-static atomic_int tot_lp_cuts = 0;
+void calc_P_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
+	for (int j=0; j<N; j++) if (rp.fixed1[j]) for (int k=0; k<N; k++) {
+		if (rp.fixed0[k] || rp.fixed1[k]) continue;
+		double Ljk = calc_local_Ljk(j, k, rp.fixed0, rp.fixed1);
+		double Lj = calc_local_L(j, rp.fixed0, rp.fixed1);
+		double delta = rp.w[j] + rp.w[k] + (-Ljk+Lj) * rp.x[k] - Lj;
+		if (delta > -EPS) continue;
 
-void improve_local_L_pairs(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
-	thread_local static double Lp_rhs[MAX_N*MAX_N];
-	thread_local static int Lp_rmatind[MAX_N*MAX_N*3];
-	thread_local static double Lp_rmatval[MAX_N*MAX_N*3];
-	int nn = 0, beg = 0;
-	for (int j=0; j<N; j++) if (fixed1[j]) for (int k=0; k<N; k++) {
-		if (fixed0[k] || fixed1[k]) continue;
-		double Ljk = calc_local_Ljk(j, k, fixed0, fixed1);
-		double Lj = calc_local_L(j, fixed0, fixed1);
-		if (w[j] + w[k] + (-Ljk+Lj) * x[k] - Lj > -EPS) continue;
-		Lp_rhs[nn] = Lj;
-		Lp_rmatind[beg  ] = i_w(j);
-		Lp_rmatval[beg++] = 1;
-		Lp_rmatind[beg  ] = i_w(k);
-		Lp_rmatval[beg++] = 1;
-		Lp_rmatind[beg  ] = i_x(k);
-		Lp_rmatval[beg++] = -Ljk + Lj;
-		nn++;
-	}
-	if (nn >= PARAM_CUTS_MIN) {
-		_c(CPXcallbackaddusercuts(context, nn, nn*3, Lp_rhs, Lp_sense, Lp_rmatbeg, Lp_rmatind, Lp_rmatval, Lp_purgeable, Lp_local));
-		tot_lp_cuts += nn;
+		cut_begin(buf, Lj, 'G');
+		cut_add(buf, i_w(j), 1);
+		cut_add(buf, i_w(k), 1);
+		cut_add(buf, i_x(k), -Ljk + Lj);
+		buf.n_p++;
 	}
 }
 
-static char La_sense[MAX_N];
-static int La_purgeable[MAX_N];
-static int La_local[MAX_N];
-
-void init_La_data() {
-	fill_n(La_sense, N, 'G');
-	fill_n(La_purgeable, N, CUT_TYPE);
-	fill_n(La_local, N, 1);
-}
-
-static atomic_int tot_la_cuts = 0;
-
-double calc_local_F0(bool* fixed0, bool* fixed1) {
+double calc_local_F0(const bool* fixed0, const bool* fixed1) {
 	// calculate all C_i for this k
 	thread_local static double C[MAX_N];
 	fill_n(C, N, 0);
@@ -336,7 +362,7 @@ double calc_local_F0(bool* fixed0, bool* fixed1) {
 	return tot;
 }
 
-double calc_local_F1(int k, bool* fixed0, bool* fixed1) {
+double calc_local_F1(int k, const bool* fixed0, const bool* fixed1) {
 	// calculate all B_i for this k
 	thread_local static double C[MAX_N];
 	fill_n(C, N, 0);
@@ -372,128 +398,38 @@ double calc_local_F1(int k, bool* fixed0, bool* fixed1) {
 	return tot;
 }
 
-void improve_local_L_all(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
+void calc_A_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
 	// use the same value for all `k`s as they would not differ by much anyways
-	double f0 = calc_local_F0(fixed0, fixed1);
+	double f0 = calc_local_F0(rp.fixed0, rp.fixed1);
 
-	thread_local static double La_rhs[MAX_N];
-	thread_local static int La_rmatbeg[MAX_N];
-	thread_local static int La_rmatind[MAX_N*MAX_N];
-	thread_local static double La_rmatval[MAX_N*MAX_N];
-	int nn = 0, beg = 0;
 	for (int k=0; k<N; k++) {
-		if (fixed0[k] || fixed1[k]) continue;
+		if (rp.fixed0[k] || rp.fixed1[k]) continue;
 		// check if this cut is violated
-		double f1k = calc_local_F1(k, fixed0, fixed1);
-		double delta = w[k] + (-f1k+f0) * x[k] - f0;
-		for (int j=0; j<N; j++) if (fixed1[j]) {
-			delta += w[j];
+		double f1k = calc_local_F1(k, rp.fixed0, rp.fixed1);
+		double delta = rp.w[k] + (-f1k+f0) * rp.x[k] - f0;
+		for (int j=0; j<N; j++) if (rp.fixed1[j]) {
+			delta += rp.w[j];
 		}
 		if (delta > -EPS) continue;
 
-		La_rhs[nn] = f0;
-		La_rmatbeg[nn] = beg;
-		for (int j=0; j<N; j++) if (fixed1[j]) {
-			La_rmatind[beg  ] = i_w(j);
-			La_rmatval[beg++] = 1;
+		cut_begin(buf, f0, 'G');
+		for (int j=0; j<N; j++) if (rp.fixed1[j]) {
+			cut_add(buf, i_w(j), 1);
 		}
-		La_rmatind[beg  ] = i_w(k);
-		La_rmatval[beg++] = 1;
-		La_rmatind[beg  ] = i_x(k);
-		La_rmatval[beg++] = -f1k + f0;
-		nn++;
-	}
-	if (nn >= PARAM_CUTS_MIN) {
-		_c(CPXcallbackaddusercuts(context, nn, beg, La_rhs, La_sense, La_rmatbeg, La_rmatind, La_rmatval, La_purgeable, La_local));
-		tot_la_cuts += nn;
+		cut_add(buf, i_w(k), 1);
+		cut_add(buf, i_x(k), -f1k + f0);
+		buf.n_a++;
 	}
 }
 
-static char M_sense[MAX_N];
-static int M_rmatbeg[MAX_N];
-static int M_purgeable[MAX_N];
-static int M_local[MAX_N];
-
-void init_M_data() {
-	fill_n(M_sense, N, 'L');
-	fill_n(M_rmatbeg, N, 0);
-	fill_n(M_purgeable, N, CUT_TYPE);
-	fill_n(M_local, N, 1);
-    for (int i = 0; i < N; i++) {
-		M_rmatbeg[i] = i * (N+1);
-	}
-}
-
-static atomic_int tot_m_cuts = 0;
-
-double calc_local_M(int i, bool* fixed0, bool* fixed1) {
-	int take = M;
-	double tot = 0;
-	// take the biggest values fixed to 1
-	for (int k = N-1; take && k >= 0; k--) {
-		int j = B_order[i][k];
-		if (fixed1[j]) {
-			tot += B[i][j];
-			take--;
-		}
-	}
-	// take the biggest remaining values
-	for (int k = N-1; take && k >= 0; k--) {
-		int j = B_order[i][k];
-		if (j == i) continue; // never take x_i
-		if (fixed1[j]) continue; // already taken
-		if (fixed0[j]) continue; // cannot be taken
-		tot += B[i][j];
-		take--;
-	}
-	assert(take == 0);
-	return tot;
-}
-
-void improve_local_M(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1, double* x, double* w) {
-	// calculate all local M_i
-	thread_local static double lm[MAX_N];
-	for (int i=0; i<N; i++) {
-		if (fixed0[i] || fixed1[i]) continue;
-		lm[i] = calc_local_M(i, fixed0, fixed1);
-	}
-
-	// generate new constraints
-	thread_local static double M_rhs[MAX_N];
-	thread_local static int M_rmatind[MAX_N*(MAX_N+1)];
-	thread_local static double M_rmatval[MAX_N*(MAX_N+1)];
-	int nn = 0;
-    for (int i = 0; i < N; i++) {
-		if (fixed0[i] || fixed1[i]) continue;
-		double delta = -w[i] - lm[i];
-		for (int j = 0; j < N; j++)
-			delta += x[j] * (B[i][j] + (j==i ? lm[i] : 0));
-		if (delta <= EPS) continue;
-
-		int beg = nn * (N+1);
-		M_rhs[nn] = lm[i];
-		for (int j = 0; j < N; j++) {
-			M_rmatind[beg + j] = i_x(j);
-			M_rmatval[beg + j] = B[i][j] + (i==j ? lm[i] : 0);
-		}
-		M_rmatind[beg + N] = i_w(i);
-		M_rmatval[beg + N] = -1;
-		nn++;
-	}
-	if (nn >= PARAM_CUTS_MIN) {
-		_c(CPXcallbackaddusercuts(context, nn, nn*(N+1), M_rhs, M_sense, M_rmatbeg, M_rmatind, M_rmatval, M_purgeable, M_local));
-		tot_m_cuts += nn;
-	}
-}
-
-void find_fixings(CPXCALLBACKCONTEXTptr context, bool* fixed0, bool* fixed1) {
+void find_fixings(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
 	// lower/upperbound of the x variables at the local node
-	thread_local static double lb[MAX_N], ub[MAX_N];
-	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, i_x(0), i_x(N-1)));
-	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, i_x(0), i_x(N-1)));
-	for (int i=0; i<N; i++) fixed1[i] = lb[i] > .5;
-	for (int i=0; i<N; i++) fixed0[i] = ub[i] < .5;
+	_c(CPXcallbackgetlocallb(context, rp.lb, i_x(0), i_x(N-1)));
+	_c(CPXcallbackgetlocalub(context, rp.ub, i_x(0), i_x(N-1)));
+	for (int i=0; i<N; i++) rp.fixed0[i] = rp.ub[i] < .5;
+	for (int i=0; i<N; i++) rp.fixed1[i] = rp.lb[i] > .5;
 }
+
 
 void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	if (PARAM_LIVE_SOL) live_display(context);
@@ -505,33 +441,51 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	bool old_node = node_id == prev_id;
 	prev_id = node_id;
 
-	//double obj;
-	//_c(CPXcallbackgetrelaxationpoint(context, NULL, 0, -1, &obj));
-	//cout << node_id << " \t-> " << tot_m_cuts << "/" << tot_lp_cuts << "/" << tot_la_cuts << " \t -> " << obj << "  \t/ " << old_node << very_old_node << endl;
-
 	// producing cuts more then once for the same node could be wasteful
 	if (PARAM_CUT_ONCE && old_node) return;
 
+	// display ram progress
+	if (!old_node) {
+		long long node_c;
+        _c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODECOUNT, &node_c));
+        if (node_c % 50000 == 0) {
+                cout << "applied l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl;
+                system("free -h");
+        }
+	}
+
+	// local buffers
+	relpoint_t rp;
+	cutbuf_t buf;
+	buf.rc = buf.nzc = buf.n_l = buf.n_m = buf.n_p = buf.n_a = 0;
+
 	// keeps track of which variables are fixed to 0/1
-	thread_local static bool fixed0[MAX_N], fixed1[MAX_N];
-	find_fixings(context, fixed0, fixed1);
+	find_fixings(context, rp);
 
 	// solution at the current node
-	thread_local static double x[MAX_N], w[MAX_N];
-	_c(CPXcallbackgetrelaxationpoint(context, x, i_x(0), i_x(N-1), NULL));
-	_c(CPXcallbackgetrelaxationpoint(context, w, i_w(0), i_w(N-1), NULL));
+	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), NULL));
+	_c(CPXcallbackgetrelaxationpoint(context, rp.w, i_w(0), i_w(N-1), NULL));
 
-	if (PARAM_LOCAL_L) // these cuts are always the same
-		improve_local_L(context, fixed0, fixed1, x, w);
+	// compute enabled cuts
+	if (PARAM_LOCAL_L)
+		calc_L_cuts(context, rp, buf);
 	if (PARAM_LOCAL_M)
-		improve_local_M(context, fixed0, fixed1, x, w);
+		calc_M_cuts(context, rp, buf);
 	if (PARAM_LOCAL_L_PAIRS)
-		improve_local_L_pairs(context, fixed0, fixed1, x, w);
+		calc_P_cuts(context, rp, buf);
 	if (PARAM_LOCAL_L_ALL)
-		improve_local_L_all(context, fixed0, fixed1, x, w);
-}
+		calc_A_cuts(context, rp, buf);
 
-double tot_callback_time = 0;
+	assert(buf.rc <= MAX_RC);
+	assert(buf.nzc <= MAX_NZC);
+	if (buf.rc >= PARAM_CUTS_MIN) {
+		_c(CPXcallbackaddusercuts(context, buf.rc, buf.nzc, buf.rhs, buf.sense, buf.rmatbeg, buf.rmatind, buf.rmatval, gb_purgeable, gb_local));
+		tot_l_cuts += buf.n_l;
+		tot_m_cuts += buf.n_m;
+		tot_p_cuts += buf.n_p;
+		tot_a_cuts += buf.n_a;
+	}
+}
 
 int cplex_callback(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
 	CPXENVptr env = (CPXENVptr) userhandle;
@@ -550,10 +504,7 @@ int main(int argc, char** argv) {
 	preorder_B();
 	if (PARAM_LOCAL_L_PAIRS) preorder_B_pairs();
 
-	if (PARAM_LOCAL_L) init_L_data();
-	if (PARAM_LOCAL_L_PAIRS) init_Lp_data();
-	if (PARAM_LOCAL_L_ALL) init_La_data();
-	if (PARAM_LOCAL_M) init_M_data();
+	init_global_buffers();
 
 	int status;
     CPXENVptr env = CPXopenCPLEX(&status);
@@ -581,7 +532,7 @@ int main(int argc, char** argv) {
     _c(CPXmipopt(env, lp));
 	_c(CPXgettime(env, &t_end));
 
-    // print solution
+    // get the solutions
     double objval, best_boud;
 	int solstat, nodecnt;
 	vector<double> sol(N + N);
@@ -589,10 +540,11 @@ int main(int argc, char** argv) {
 	_c(CPXgetbestobjval(env, lp, &best_boud));
 	nodecnt = CPXgetnodecnt(env, lp);
 
+	// print statistics and solutions
 	cout << "time in user callback = " << tot_callback_time << endl;
 	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
-	cout << "applied l / lp / la / m cuts = " << tot_l_cuts << " / " << tot_lp_cuts << " / " << tot_la_cuts << " / " << tot_m_cuts << endl;
+	cout << "applied l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl;
 	cerr << N << endl;
 	for (int i=0; i<N; i++) {
 		cerr << int(round(sol[i_x(i)])) << endl;
@@ -601,10 +553,10 @@ int main(int argc, char** argv) {
 	cerr << "# obj = " << objval << endl;
 	if (solstat != CPXMIP_OPTIMAL)
 		cerr << "# bound = " << best_boud << endl;
-	cerr << "# time = " << (t_end - t_start) << ", in cb = " << tot_callback_time << endl;
-	cerr << "# nodes = " << nodecnt << endl;
-	cerr << "# l / lp / la / m cuts = " << tot_l_cuts << " / " << tot_lp_cuts << " / " << tot_la_cuts << " / " << tot_m_cuts << endl;
-	cerr << "# cb"
+	cerr << "# time = " << (t_end - t_start) << ", in cb = " << tot_callback_time << endl
+		<< "# nodes = " << nodecnt << endl
+		<< "# l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl
+		<< "# cb"
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
 		<< ", local L = " << PARAM_LOCAL_L
 		<< ", local L pairs = " << PARAM_LOCAL_L_PAIRS

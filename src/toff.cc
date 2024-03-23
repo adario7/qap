@@ -173,7 +173,7 @@ int main(int argc, char **argv) {
 	cerr << "# status = " << solstat << endl;
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl;
-	cerr << "# toff, no dynamic search" << endl;
+	cerr << "# toff" << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));
