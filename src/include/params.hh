@@ -14,6 +14,8 @@ extern bool PARAM_LOCAL_M;
 extern bool PARAM_CUT_ONCE;
 // don't bother adding cuts if less then a minimum are found
 extern int PARAM_CUTS_MIN;
+// -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
+extern int PARAM_CPLEX_CUTS;
 // -1 to disable
 extern double PARAM_TIME_LIMIT;
 // single vs multi thread

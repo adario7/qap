@@ -128,14 +128,14 @@ void add_variables_w(CPXENVptr env, CPXLPptr lp) {
 // select M locations constraint
 // sum_i ( x_i ) = M
 void add_cons_M(CPXENVptr env, CPXLPptr lp) {
-    double rhs[1] = {(double) M};
-    int rmatbeg[1] = {0};
+	double rhs[1] = {(double) M};
+	int rmatbeg[1] = {0};
 	vector<int> rmatind(N);
 	vector<double> rmatval(N, 1.0);
-    for (int i = 0; i < N; i++) {
-        rmatind[i] = i_x(i);
-    }
-    _c(CPXaddrows(env, lp, 0, 1, N, rhs, "E", rmatbeg, rmatind.data(), rmatval.data(), NULL, NULL));
+	for (int i = 0; i < N; i++) {
+		rmatind[i] = i_x(i);
+	}
+	_c(CPXaddrows(env, lp, 0, 1, N, rhs, "E", rmatbeg, rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
 double calc_Mi(int i) {
@@ -159,7 +159,7 @@ void add_cons_xw(CPXENVptr env, CPXLPptr lp) {
 	vector<int> rmatbeg(N, 0);
 	vector<int> rmatind(N*(N+1), 0);
 	vector<double> rmatval(N*(N+1), 0);
-    for (int i = 0; i < N; i++) {
+	for (int i = 0; i < N; i++) {
 		double Mi = calc_Mi(i);
 		int beg = i * (N+1);
 		rhs[i] = Mi;
@@ -171,7 +171,7 @@ void add_cons_xw(CPXENVptr env, CPXLPptr lp) {
 		rmatind[beg + N] = i_w(i);
 		rmatval[beg + N] = -1;
 	}
-    _c(CPXaddrows(env, lp, 0, N, N*(N+1), rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
+	_c(CPXaddrows(env, lp, 0, N, N*(N+1), rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
 double calc_Li(int i) {
@@ -193,7 +193,7 @@ void add_cons_L(CPXENVptr env, CPXLPptr lp) {
 	vector<int> rmatbeg(N, 0);
 	vector<int> rmatind(N*2, 0);
 	vector<double> rmatval(N*2, 0);
-    for (int i = 0; i < N; i++) {
+	for (int i = 0; i < N; i++) {
 		double Li = calc_Li(i);
 		int beg = i * 2;
 		rmatbeg[i] = beg;
@@ -202,7 +202,7 @@ void add_cons_L(CPXENVptr env, CPXLPptr lp) {
 		rmatind[beg + 1] = i_x(i);
 		rmatval[beg + 1] = -Li;
 	}
-    _c(CPXaddrows(env, lp, 0, N, N*2, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
+	_c(CPXaddrows(env, lp, 0, N, N*2, rhs.data(), sense.data(), rmatbeg.data(), rmatind.data(), rmatval.data(), NULL, NULL));
 }
 
 double calc_local_L(int i, const bool* fixed0, const bool* fixed1) {
@@ -231,7 +231,7 @@ double calc_local_L(int i, const bool* fixed0, const bool* fixed1) {
 void calc_L_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
 	thread_local static double L_rmatval[MAX_N*2];
 	thread_local static int L_rmatind[MAX_N*2];
-    for (int i = 0; i < N; i++) {
+	for (int i = 0; i < N; i++) {
 		if (rp.fixed0[i] || rp.fixed1[i]) continue;
 		double ll = calc_local_L(i, rp.fixed0, rp.fixed1);
 		double delta = rp.w[i] - ll * rp.x[i];
@@ -269,7 +269,7 @@ double calc_local_M(int i, const bool* fixed0, const bool* fixed1) {
 }
 
 void calc_M_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
-    for (int i = 0; i < N; i++) {
+	for (int i = 0; i < N; i++) {
 		if (rp.fixed0[i] || rp.fixed1[i]) continue;
 		double lm = calc_local_M(i, rp.fixed0, rp.fixed1);
 		double delta = -rp.w[i] - lm;
@@ -447,11 +447,11 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	// display ram progress
 	if (!old_node) {
 		long long node_c;
-        _c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODECOUNT, &node_c));
-        if (node_c % 50000 == 0) {
-                cout << "applied l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl;
-                system("free -h");
-        }
+		_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODECOUNT, &node_c));
+		if (node_c % 50000 == 0) {
+				cout << "applied l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl;
+				system("free -h");
+		}
 	}
 
 	// local buffers
@@ -507,12 +507,12 @@ int main(int argc, char** argv) {
 	init_global_buffers();
 
 	int status;
-    CPXENVptr env = CPXopenCPLEX(&status);
+	CPXENVptr env = CPXopenCPLEX(&status);
 	if (status) abort();
-    CPXLPptr lp = CPXcreateprob(env, &status, "qap");
+	CPXLPptr lp = CPXcreateprob(env, &status, "qap");
 	if (status) abort();
 
-    _c(CPXchgobjsen(env, lp, CPX_MIN));
+	_c(CPXchgobjsen(env, lp, CPX_MIN));
 
 	add_variables_x(env, lp);
 	add_variables_w(env, lp);
@@ -525,15 +525,15 @@ int main(int argc, char** argv) {
 	// add a callback to generate cuts
 	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
 
-    // solve as mip
+	// solve as mip
 	apply_parameters(env, lp);
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
-    _c(CPXmipopt(env, lp));
+	_c(CPXmipopt(env, lp));
 	_c(CPXgettime(env, &t_end));
 
-    // get the solutions
-    double objval, best_boud;
+	// get the solutions
+	double objval, best_boud;
 	int solstat, nodecnt;
 	vector<double> sol(N + N);
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
@@ -563,6 +563,8 @@ int main(int argc, char** argv) {
 		<< ", local L all = " << PARAM_LOCAL_L_ALL
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", cut once = " << PARAM_CUT_ONCE
+		<< ", min cuts = " << PARAM_CUTS_MIN
+		<< ", cplex cuts = " << PARAM_CPLEX_CUTS
 		<< ", single thread = " << PARAM_SINGLE_THREAD
 		<< ", opportunistic = " << PARAM_OPPORTUNISTIC
 		<< ", eps = " << EPS
@@ -572,9 +574,9 @@ int main(int argc, char** argv) {
 		<< endl;
 	cerr << "# n1 = " << M << endl;
 
-    // clean up
-    _c(CPXfreeprob(env, &lp));
-    _c(CPXcloseCPLEX(&env));
+	// clean up
+	_c(CPXfreeprob(env, &lp));
+	_c(CPXcloseCPLEX(&env));
 
-    return 0;
+	return 0;
 } 
