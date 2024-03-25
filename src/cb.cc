@@ -442,7 +442,7 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	prev_id = node_id;
 
 	// producing cuts more then once for the same node could be wasteful
-	if (PARAM_CUT_ONCE && old_node) return;
+	if (PARAM_CUT_ONCE == 2 && old_node) return;
 
 	// display ram progress
 	if (!old_node) {
@@ -471,9 +471,9 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 		calc_L_cuts(context, rp, buf);
 	if (PARAM_LOCAL_M)
 		calc_M_cuts(context, rp, buf);
-	if (PARAM_LOCAL_L_PAIRS)
+	if (PARAM_LOCAL_L_PAIRS && (!old_node || PARAM_CUT_ONCE == 0))
 		calc_P_cuts(context, rp, buf);
-	if (PARAM_LOCAL_L_ALL)
+	if (PARAM_LOCAL_L_ALL && (!old_node || PARAM_CUT_ONCE == 0))
 		calc_A_cuts(context, rp, buf);
 
 	assert(buf.rc <= MAX_RC);

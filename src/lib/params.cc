@@ -15,8 +15,8 @@ bool PARAM_LOCAL_L_PAIRS = false;
 bool PARAM_LOCAL_L_ALL = false;
 // makes nodes enumeration slighlty slower, improves the LP
 bool PARAM_LOCAL_M = true;
-// whether cuts are calculated only once per node, even after a new relaxation
-bool PARAM_CUT_ONCE = false;
+// whether cuts are calculated only once per node: 0 = never, 1 = only expesive cuts, 2 = always
+int PARAM_CUT_ONCE = 0;
 // don't bother adding cuts if less then a minimum are found
 int PARAM_CUTS_MIN = 4;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
