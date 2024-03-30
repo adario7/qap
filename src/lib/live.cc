@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstdlib>
 #include <live.hh>
 #include <inputs.hh>
@@ -8,6 +9,11 @@ using namespace std;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
+
+extern atomic_int tot_l_cuts;
+extern atomic_int tot_p_cuts;
+extern atomic_int tot_a_cuts;
+extern atomic_int tot_m_cuts;
 
 void live_display(CPXCALLBACKCONTEXTptr context) {
 	long long node_id;
@@ -34,6 +40,18 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 		of << w[i] << endl;
 	}
 
+	static long long prev_id = -1;
+	static int prev_l = 0, prev_m = 0, prev_p = 0, prev_a = 0;
+
 	cout << "node " << hex << node_id << dec << ", obj = " << obj << endl;
+	if (node_id == prev_id) {
+		cout << " * after " << (tot_l_cuts-prev_l) << " / " << (tot_m_cuts-prev_m) << " / " << (tot_p_cuts-prev_p) << " / " << (tot_a_cuts-prev_a) << " cuts" << endl;
+	}
 	system("python ../../plot/live.py /tmp/sol");
+
+	prev_id = node_id;
+	prev_l = tot_l_cuts;
+	prev_m = tot_m_cuts;
+	prev_p = tot_p_cuts;
+	prev_a = tot_a_cuts;
 }

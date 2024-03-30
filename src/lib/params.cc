@@ -56,7 +56,7 @@ void read_parameters(int argc, char** argv) {
 		} else if (arg == "m") {
 			PARAM_LOCAL_M = stoi(next_arg()) != 0;
 		} else if (arg == "co") {
-			PARAM_CUT_ONCE = stoi(next_arg()) != 0;
+			PARAM_CUT_ONCE = stoi(next_arg());
 		} else if (arg == "live") {
 			PARAM_LIVE_SOL = stoi(next_arg()) != 0;
 		} else if (arg == "cm") {

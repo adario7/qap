@@ -22,8 +22,8 @@ constexpr int CUT_TYPE = CPX_USECUT_FORCE;
 
 using namespace std;
 
-constexpr int MAX_RC = MAX_N + MAX_N + MAX_N*MAX_N + MAX_N;
-constexpr int MAX_NZC = MAX_N*2 + MAX_N*(MAX_N+1) + MAX_N*MAX_N*3 + MAX_N*(MAX_N+1);
+constexpr int MAX_RC = MAX_N + MAX_N + MAX_N + MAX_N;
+constexpr int MAX_NZC = MAX_N*2 + MAX_N*(MAX_N+1) + MAX_N*3 + MAX_N*(MAX_N+1);
 
 struct relpoint_t {
 	double x[MAX_N], w[MAX_N];
@@ -228,7 +228,7 @@ double calc_local_L(int i, const bool* fixed0, const bool* fixed1) {
 	return tot;
 }
 
-void calc_L_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
+void calc_L_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	thread_local static double L_rmatval[MAX_N*2];
 	thread_local static int L_rmatind[MAX_N*2];
 	for (int i = 0; i < N; i++) {
@@ -268,7 +268,7 @@ double calc_local_M(int i, const bool* fixed0, const bool* fixed1) {
 	return tot;
 }
 
-void calc_M_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
+void calc_M_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	for (int i = 0; i < N; i++) {
 		if (rp.fixed0[i] || rp.fixed1[i]) continue;
 		double lm = calc_local_M(i, rp.fixed0, rp.fixed1);
@@ -309,19 +309,34 @@ double calc_local_Ljk(int j, int k, const bool* fixed0, const bool* fixed1) {
 	return tot;
 }
 
-void calc_P_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
-	for (int j=0; j<N; j++) if (rp.fixed1[j]) for (int k=0; k<N; k++) {
+void calc_P_cuts(const relpoint_t& rp, cutbuf_t& buf) {
+	double Ljks[MAX_N], Ljs[MAX_N];
+	for (int j=0; j<N; j++) if (rp.fixed1[j]) {
+		// we could do slightly better with different Ljs for each k where we fix k to 0
+		Ljs[j] = calc_local_L(j, rp.fixed0, rp.fixed1);
+	}
+	for (int k=0; k<N; k++) {
 		if (rp.fixed0[k] || rp.fixed1[k]) continue;
-		double Ljk = calc_local_Ljk(j, k, rp.fixed0, rp.fixed1);
-		double Lj = calc_local_L(j, rp.fixed0, rp.fixed1);
-		double delta = rp.w[j] + rp.w[k] + (-Ljk+Lj) * rp.x[k] - Lj;
-		if (delta > -EPS) continue;
-
-		cut_begin(buf, Lj, 'G');
-		cut_add(buf, i_w(j), 1);
-		cut_add(buf, i_w(k), 1);
-		cut_add(buf, i_x(k), -Ljk + Lj);
-		buf.n_p++;
+		int best_j = -1;
+		double best_delta = -EPS;
+		for (int j=0; j<N; j++) if (rp.fixed1[j]) {
+			double ljk = Ljks[j] = calc_local_Ljk(j, k, rp.fixed0, rp.fixed1);
+			double lj = Ljs[j];
+			double delta = rp.w[j] + rp.w[k] + (-ljk+lj) * rp.x[k] - lj;
+			if (delta < best_delta) {
+				best_delta = delta;
+				best_j = j;
+			}
+		}
+		if (best_j != -1) {
+			int j = best_j;
+			double ljk = Ljks[j], lj = Ljs[j];
+			cut_begin(buf, lj, 'G');
+			cut_add(buf, i_w(j), 1);
+			cut_add(buf, i_w(k), 1);
+			cut_add(buf, i_x(k), -ljk + lj);
+			buf.n_p++;
+		}
 	}
 }
 
@@ -398,7 +413,7 @@ double calc_local_F1(int k, const bool* fixed0, const bool* fixed1) {
 	return tot;
 }
 
-void calc_A_cuts(CPXCALLBACKCONTEXTptr context, const relpoint_t& rp, cutbuf_t& buf) {
+void calc_A_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	// use the same value for all `k`s as they would not differ by much anyways
 	double f0 = calc_local_F0(rp.fixed0, rp.fixed1);
 
@@ -468,13 +483,13 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 
 	// compute enabled cuts
 	if (PARAM_LOCAL_L)
-		calc_L_cuts(context, rp, buf);
+		calc_L_cuts(rp, buf);
 	if (PARAM_LOCAL_M)
-		calc_M_cuts(context, rp, buf);
+		calc_M_cuts(rp, buf);
 	if (PARAM_LOCAL_L_PAIRS && (!old_node || PARAM_CUT_ONCE == 0))
-		calc_P_cuts(context, rp, buf);
+		calc_P_cuts(rp, buf);
 	if (PARAM_LOCAL_L_ALL && (!old_node || PARAM_CUT_ONCE == 0))
-		calc_A_cuts(context, rp, buf);
+		calc_A_cuts(rp, buf);
 
 	assert(buf.rc <= MAX_RC);
 	assert(buf.nzc <= MAX_NZC);
