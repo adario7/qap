@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # find sources
 file(GLOB_RECURSE LIB CONFIGURE_DEPENDS "lib/*.cc" "include/*.hh")
+add_library(lib ${LIB})
 include_directories(include)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -23,17 +24,17 @@ find_package(CPLEX REQUIRED)
 include_directories(${CPLEX_INCLUDE_DIRS})
 
 # binary targets
-add_executable(toff ${LIB} toff.cc)
-target_link_libraries(toff PRIVATE ${CPLEX_LIBRARIES})
+add_executable(toff toff.cc)
+target_link_libraries(toff PRIVATE lib ${CPLEX_LIBRARIES})
 
-add_executable(nocb ${LIB} nocb.cc)
-target_link_libraries(nocb PRIVATE ${CPLEX_LIBRARIES})
+add_executable(cb cb.cc)
+target_link_libraries(cb PRIVATE lib ${CPLEX_LIBRARIES})
 
-add_executable(cb ${LIB} cb.cc)
-target_link_libraries(cb PRIVATE ${CPLEX_LIBRARIES})
+add_executable(nocb experiments/nocb.cc)
+target_link_libraries(nocb PRIVATE lib ${CPLEX_LIBRARIES})
 
-add_executable(custom ${LIB} experiments/custom.cc)
-target_link_libraries(custom PRIVATE ${CPLEX_LIBRARIES})
+add_executable(custom experiments/custom.cc)
+target_link_libraries(custom PRIVATE lib ${CPLEX_LIBRARIES})
 
-add_executable(mixed ${LIB} experiments/mixed.cc)
-target_link_libraries(mixed PRIVATE ${CPLEX_LIBRARIES})
+add_executable(mixed experiments/mixed.cc)
+target_link_libraries(mixed PRIVATE lib ${CPLEX_LIBRARIES})
