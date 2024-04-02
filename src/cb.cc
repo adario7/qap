@@ -437,12 +437,16 @@ void calc_A_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	}
 }
 
-void find_fixings(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
+void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
 	// lower/upperbound of the x variables at the local node
 	_c(CPXcallbackgetlocallb(context, rp.lb, i_x(0), i_x(N-1)));
 	_c(CPXcallbackgetlocalub(context, rp.ub, i_x(0), i_x(N-1)));
 	for (int i=0; i<N; i++) rp.fixed0[i] = rp.ub[i] < .5;
 	for (int i=0; i<N; i++) rp.fixed1[i] = rp.lb[i] > .5;
+
+	// solution at the current node
+	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), NULL));
+	_c(CPXcallbackgetrelaxationpoint(context, rp.w, i_w(0), i_w(N-1), NULL));
 }
 
 
@@ -473,13 +477,7 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	relpoint_t rp;
 	cutbuf_t buf;
 	buf.rc = buf.nzc = buf.n_l = buf.n_m = buf.n_p = buf.n_a = 0;
-
-	// keeps track of which variables are fixed to 0/1
-	find_fixings(context, rp);
-
-	// solution at the current node
-	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), NULL));
-	_c(CPXcallbackgetrelaxationpoint(context, rp.w, i_w(0), i_w(N-1), NULL));
+	find_relpoint(context, rp);
 
 	// compute enabled cuts
 	if (PARAM_LOCAL_L)
