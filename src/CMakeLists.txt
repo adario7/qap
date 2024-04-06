@@ -38,3 +38,6 @@ target_link_libraries(custom PRIVATE lib ${CPLEX_LIBRARIES})
 
 add_executable(mixed experiments/mixed.cc)
 target_link_libraries(mixed PRIVATE lib ${CPLEX_LIBRARIES})
+
+add_executable(a_star experiments/a_star.cc)
+target_link_libraries(a_star PRIVATE lib ${CPLEX_LIBRARIES})
