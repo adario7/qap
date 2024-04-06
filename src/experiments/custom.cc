@@ -20,7 +20,7 @@ using namespace std;
 
 // parameters
 // -1 to disable
-constexpr double PARAM_TIME_LIMIT = 60;
+constexpr double PARAM_TIME_LIMIT = -1;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
@@ -159,51 +159,52 @@ struct node_t {
 	double unfeas;
 };
 
-void calc_local_L(nbitset fixed, double* ll) {
-	// calculate all local L_i
-	for (int i=0; i<N; i++) {
-		int take = M;
-		double tot = 0;
-		// always take i
+double calc_local_L(int i, nbitset fixed0, nbitset fixed1) {
+	int take = M;
+	double tot = 0;
+	// take all the fixed variables
+	for (int j = 0; j < N; j++) {
+		if (j==i || fixed1[j]) {
+			tot += B[i][j];
+			take--;
+		}
+	}
+	assert(take >= 0);
+	// take the smallest remaining values
+	for (int k = 0; take && k < N; k++) {
+		int j = B_order[i][k];
+		if (j==i || fixed1[j]) continue; // already counted
+		if (fixed0[j]) continue; // cannot be used
+		tot += B[i][j];
 		take--;
-		tot += B[i][i];
-		// take all the fixed variables
-		for (int j = 0; take && j < N; j++) {
-			if (j == i) continue; // already counted
-			if (fixed[j]) {
-				tot += B[i][j];
-				take--;
-			}
-		}
-		// take the smallest remaining values
-		for (int k = 0; take && k < N; k++) {
-			int j = B_order[i][k];
-			if (j == i) continue; // already counted
-			if (fixed[j]) continue; // already counted
+	}
+	assert(take == 0);
+	return tot;
+}
+
+double calc_local_M(int i, nbitset fixed0, nbitset fixed1) {
+	int take = M;
+	double tot = 0;
+	// take the biggest values fixed to 1
+	for (int k = N-1; take && k >= 0; k--) {
+		int j = B_order[i][k];
+		if (fixed1[j]) {
 			tot += B[i][j];
 			take--;
 		}
-		assert(take == 0);
-		ll[i] = tot;
 	}
-}
-
-void calc_local_M(nbitset fixed, double* lm) {
-	for (int i=0; i<N; i++) {
-		int take = M;
-		double tot = 0;
-		// take the biggest values not fixed to 0
-		for (int k = N-1; take && k >= 0; k--) {
-			int j = B_order[i][k];
-			if (j == i || fixed[j]) continue;
-			tot += B[i][j];
-			take--;
-		}
-		assert(take == 0);
-		lm[i] = tot;
+	// take the biggest remaining values
+	for (int k = N-1; take && k >= 0; k--) {
+		int j = B_order[i][k];
+		if (j == i) continue; // never take x_i
+		if (fixed1[j]) continue; // already taken
+		if (fixed0[j]) continue; // cannot be taken
+		tot += B[i][j];
+		take--;
 	}
+	assert(take == 0);
+	return tot;
 }
-
 
 int main() {
 	read_inputs();
@@ -283,30 +284,39 @@ int main() {
 		}
 		_c(CPXchgbds(env, lp, N, bound_indices, bound_lu, bound));
 		// local L, M
-		static double lL[MAX_N];
-		calc_local_L(fixed & fvalue, lL);
-		static double lM[MAX_N];
-		calc_local_M(fixed & ~fvalue, lM);
-		static int rowlist[2 * MAX_N], collist[2 * MAX_N];
-		static double vallist[2 * MAX_N];
+		nbitset fixed0 = fixed & ~fvalue, fixed1 = fixed & fvalue;
+		int rowlist[2 * MAX_N], collist[2 * MAX_N];
+		double vallist[2 * MAX_N];
+		double localL[MAX_N], localM[MAX_N];
+		for (int i=0; i<N; i++) if (!fixed[i]) {
+			localL[i] = calc_local_L(i, fixed0, fixed1);
+			localM[i] = calc_local_M(i, fixed0, fixed1);
+		}
+		int nr = 0;
 		for (int i=0; i<N; i++) {
 			// w_i - L_i x_i >= 0, conss [N -> 2N)
-			rowlist[i] = N + i;
-			collist[i] = i_x(i);
-			vallist[i] = lL[i];
+			rowlist[nr] = N + i;
+			collist[nr] = i_x(i);
+			vallist[nr] = fixed[i] ? 0 : -localL[i];
+			nr++;
 		}
 		for (int i=0; i<N; i++) {
+			if (fixed[i]) continue; // an old M on a fixed variable does not hurt
 			// sum_{j!=i}( b_ij x_j ) + (M_i + b_ii) x_i - w_i <= M_i, conss [0 -> N)
-			rowlist[N+i] = i;
-			collist[N+i] = i_x(i);
-			vallist[N+i] = lM[i] + B[i][i];
+			rowlist[nr] = i;
+			collist[nr] = i_x(i);
+			vallist[nr] = localM[i] + B[i][i];
+			nr++;
 		}
-		_c(CPXchgcoeflist(env, lp, 2*N, rowlist, collist, vallist));
+		_c(CPXchgcoeflist(env, lp, nr, rowlist, collist, vallist));
+		nr = 0;
 		for (int i=0; i<N; i++) {
-			rowlist[i] = i;
-			vallist[i] = lM[i];
+			if (fixed[i]) continue;
+			rowlist[nr] = i;
+			vallist[nr] = localM[i];
+			nr++;
 		}
-		_c(CPXchgrhs(env, lp, N, rowlist, vallist));
+		_c(CPXchgrhs(env, lp, nr, rowlist, vallist));
 		// solve the relaxation
 		_c(CPXlpopt(env, lp));
 		// get the solution
@@ -318,6 +328,8 @@ int main() {
 		if (solstat != CPX_STAT_OPTIMAL) return;
 		// cannot improve incumbent
 		if (objval > incumbent) return;
+		int sp_every = 5 + node_n/8096;
+		bool speculative = incumbent == INFINITY || (node_n/1024)%sp_every==0;
 		int branch = -1;
 		double most_unfeas = 0;
 		double tot_unfeas = 0;
@@ -326,6 +338,7 @@ int main() {
 			double x = sol[i];
 			double unfeas = 0.5 - abs(x - 0.5);
 			tot_unfeas += unfeas*unfeas;
+			if (!speculative && !fixed[i]) unfeas *= localM[i] - localL[i];
 			if (unfeas > most_unfeas) {
 				most_unfeas = unfeas;
 				branch = i;
@@ -341,12 +354,13 @@ int main() {
 			node_t next = {
 				fixed, fvalue, objval, branch, tot_unfeas
 			};
-			if (incumbent == INFINITY || (node_n/2048)%5==4)
+			if (speculative)
 				f_queue.push(next);
 			else
 				b_queue.push(next);
 			++glob_bound[objval];
 		}
+
 	};
 
 	search_node(0, 0);
@@ -361,7 +375,7 @@ int main() {
 		}
 
 		node_t node;
-		if (!f_queue.empty() && (b_queue.empty() || node_n%3)) {
+		if (!f_queue.empty()) {
 			node = f_queue.top();
 			f_queue.pop();
 		} else {
@@ -390,16 +404,15 @@ int main() {
 			search_node(f, fval);
 		}
 	}
-	print_info();
 
 	_c(CPXgettime(env, &t_end));
 	double t_took  = t_end - t_start;
 	cout << "solution = " << incumbent << endl;
 	cout << "took " << t_took << "s" << endl;
-	cerr << N << " " << M << endl;
+	cerr << N << endl;
 	for (int i=0; i<N; i++) {
 		//cout << "  x_" << i << " = " << int(inc_sol[i_x(i)]) << endl;
-		cerr << i << " " << int(inc_sol[i_x(i)]) << endl;
+		cerr << int(round(inc_sol[i_x(i)])) << endl;
 	}
 	cerr << "# obj = " << incumbent << endl;
 	cerr << "# bound = " << curr_bound() << endl;
