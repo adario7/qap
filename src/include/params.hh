@@ -14,6 +14,8 @@ extern bool PARAM_LOCAL_M;
 extern bool PARAM_LOCAL_FREE;
 // when true, only appy cuts once per node
 extern bool PARAM_CUT_ONCE;
+// calculate expensive cuts only when there are no more simple cuts
+extern bool PARAM_EXP_LATER;
 // don't bother adding cuts if less then a minimum are found
 extern int PARAM_CUTS_MIN;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts

@@ -14,6 +14,7 @@ extern atomic_int tot_l_cuts;
 extern atomic_int tot_p_cuts;
 extern atomic_int tot_a_cuts;
 extern atomic_int tot_m_cuts;
+extern atomic_int tot_f_cuts;
 
 void live_display(CPXCALLBACKCONTEXTptr context) {
 	long long node_id;
@@ -41,11 +42,11 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 	}
 
 	static long long prev_id = -1;
-	static int prev_l = 0, prev_m = 0, prev_p = 0, prev_a = 0;
+	static int prev_l = 0, prev_m = 0, prev_p = 0, prev_a = 0, prev_f = 0;
 
 	cout << "node " << hex << node_id << dec << ", obj = " << obj << endl;
 	if (node_id == prev_id) {
-		cout << " * after " << (tot_l_cuts-prev_l) << " / " << (tot_m_cuts-prev_m) << " / " << (tot_p_cuts-prev_p) << " / " << (tot_a_cuts-prev_a) << " cuts" << endl;
+		cout << " * after " << (tot_l_cuts-prev_l) << " / " << (tot_m_cuts-prev_m) << " / " << (tot_p_cuts-prev_p) << " / " << (tot_a_cuts-prev_a) << " / " << (tot_f_cuts-prev_f) << " cuts" << endl;
 	}
 	system("python ../../plot/live.py /tmp/sol");
 
@@ -54,4 +55,5 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 	prev_m = tot_m_cuts;
 	prev_p = tot_p_cuts;
 	prev_a = tot_a_cuts;
+	prev_f = tot_f_cuts;
 }

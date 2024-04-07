@@ -19,6 +19,8 @@ bool PARAM_LOCAL_M = true;
 bool PARAM_LOCAL_FREE = false;
 // when true, only appy cuts once per node
 bool PARAM_CUT_ONCE = false;
+// calculate expensive cuts only when there are no more simple cuts
+bool PARAM_EXP_LATER = false;
 // don't bother adding cuts if less then a minimum are found
 int PARAM_CUTS_MIN = 4;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
@@ -61,6 +63,8 @@ void read_parameters(int argc, char** argv) {
 			PARAM_LOCAL_FREE = stoi(next_arg()) != 0;
 		} else if (arg == "co") {
 			PARAM_CUT_ONCE = stoi(next_arg()) != 0;
+		} else if (arg == "el") {
+			PARAM_EXP_LATER = stoi(next_arg()) != 0;
 		} else if (arg == "live") {
 			PARAM_LIVE_SOL = stoi(next_arg()) != 0;
 		} else if (arg == "cm") {

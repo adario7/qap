@@ -512,16 +512,16 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	int n1c = count(rp.fixed1, rp.fixed1+N, true);
 
 	// compute enabled cuts
-	double localL[MAX_N];
 	if (PARAM_LOCAL_L)
 		calc_L_cuts(rp, buf);
 	if (PARAM_LOCAL_M)
 		calc_M_cuts(rp, buf);
-	if (PARAM_LOCAL_L_PAIRS)
+	bool enable_exp = !PARAM_EXP_LATER || buf.n_l==0;
+	if (PARAM_LOCAL_L_PAIRS && enable_exp)
 		calc_P_cuts(rp, buf);
-	if (PARAM_LOCAL_L_ALL)
+	if (PARAM_LOCAL_L_ALL && enable_exp)
 		calc_A_cuts(rp, buf);
-	if (PARAM_LOCAL_FREE && n1c + 2 <= M)
+	if (PARAM_LOCAL_FREE && enable_exp && n1c + 2 <= M)
 		calc_F_cuts(rp, buf);
 
 	assert(buf.rc <= MAX_RC);
@@ -613,6 +613,7 @@ int main(int argc, char** argv) {
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", local F = " << PARAM_LOCAL_FREE
 		<< ", cut once = " << PARAM_CUT_ONCE
+		<< ", exp later = " << PARAM_EXP_LATER
 		<< ", min cuts = " << PARAM_CUTS_MIN
 		<< ", cplex cuts = " << PARAM_CPLEX_CUTS
 		<< ", single thread = " << PARAM_SINGLE_THREAD
