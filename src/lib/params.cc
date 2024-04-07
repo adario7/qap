@@ -7,16 +7,18 @@ using namespace std;
 
 // seems faster on bigger problems
 bool PARAM_DYNAMIC_SEARCH = true;
-// greatly improves the LP
+// local L cuts
 bool PARAM_LOCAL_L = true;
-// makes nodes enumeration slower, slightly improves the LP
+// F cuts between fixed-free pairs
 bool PARAM_LOCAL_L_PAIRS = false;
-// makes nodes enumeration slower, slightly improves the LP
+// F cuts between free variables and all fixed ones
 bool PARAM_LOCAL_L_ALL = false;
-// makes nodes enumeration slighlty slower, improves the LP
+// cuts for a better big M at the local node
 bool PARAM_LOCAL_M = true;
-// whether cuts are calculated only once per node: 0 = never, 1 = only expesive cuts, 2 = always
-int PARAM_CUT_ONCE = 0;
+// cuts between free pairs using local Ls
+bool PARAM_LOCAL_FREE = false;
+// when true, only appy cuts once per node
+bool PARAM_CUT_ONCE = false;
 // don't bother adding cuts if less then a minimum are found
 int PARAM_CUTS_MIN = 4;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
@@ -55,8 +57,10 @@ void read_parameters(int argc, char** argv) {
 			PARAM_LOCAL_L_ALL = stoi(next_arg()) != 0;
 		} else if (arg == "m") {
 			PARAM_LOCAL_M = stoi(next_arg()) != 0;
+		} else if (arg == "f") {
+			PARAM_LOCAL_FREE = stoi(next_arg()) != 0;
 		} else if (arg == "co") {
-			PARAM_CUT_ONCE = stoi(next_arg());
+			PARAM_CUT_ONCE = stoi(next_arg()) != 0;
 		} else if (arg == "live") {
 			PARAM_LIVE_SOL = stoi(next_arg()) != 0;
 		} else if (arg == "cm") {

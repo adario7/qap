@@ -2,16 +2,18 @@
 
 // seems faster on bigger problems
 extern bool PARAM_DYNAMIC_SEARCH;
-// greatly improves the LP
+// local L cuts
 extern bool PARAM_LOCAL_L;
-// makes nodes enumeration slower, slightly improves the LP
+// F cuts between fixed-free pairs
 extern bool PARAM_LOCAL_L_PAIRS;
-// makes nodes enumeration slower, slightly improves the LP
+// F cuts between free variables and all fixed ones
 extern bool PARAM_LOCAL_L_ALL;
-// makes nodes enumeration slighlty slower, improves the LP
+// cuts for a better big M at the local node
 extern bool PARAM_LOCAL_M;
-// whether cuts are calculated only once per node: 0 = never, 1 = only expesive cuts, 2 = always
-extern int PARAM_CUT_ONCE;
+// cuts between free pairs using local Ls
+extern bool PARAM_LOCAL_FREE;
+// when true, only appy cuts once per node
+extern bool PARAM_CUT_ONCE;
 // don't bother adding cuts if less then a minimum are found
 extern int PARAM_CUTS_MIN;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
