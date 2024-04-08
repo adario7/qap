@@ -104,6 +104,8 @@ void preorder_B_pairs() {
 }
 
 void add_variables_x(CPXENVptr env, CPXLPptr lp) {
+	vector<double> lb(N, 0.0);
+	lb[0] = 1.0; // due to symmetry we can fix x_0=1 w.l.o.g.
 	vector<double> ub(N, 1.0);
 	vector<char> type(N, 'I');
 	vector<string> name(N);
@@ -112,7 +114,7 @@ void add_variables_x(CPXENVptr env, CPXLPptr lp) {
 		name[i] = "x_" + to_string(i);
 		c_name[i] = const_cast<char*>(name[i].c_str());
 	}
-	_c(CPXnewcols(env, lp, N, NULL, NULL, ub.data(), type.data(), c_name.data()));
+	_c(CPXnewcols(env, lp, N, NULL, lb.data(), ub.data(), type.data(), c_name.data()));
 }
 
 void add_variables_w(CPXENVptr env, CPXLPptr lp) {
@@ -141,10 +143,11 @@ void add_cons_M(CPXENVptr env, CPXLPptr lp) {
 }
 
 double calc_Mi(int i) {
-	int take = M;
-	double tot = 0;
+	int take = M-1;
+	double tot = B[i][0];  // due to symmetry we can fix x_0=1 w.l.o.g.
 	for (int k = N-1; take && k >= 0; k--) {
 		int j = B_order[i][k];
+		if (j == 0) continue; // already taken
 		if (j == i) continue; // fixed x_i = 0
 		tot += B[i][j];
 		take--;
@@ -179,9 +182,13 @@ void add_cons_xw(CPXENVptr env, CPXLPptr lp) {
 double calc_Li(int i) {
 	int take = M-1;
 	double tot = B[i][i]; // fixed x_i = 1
+	if (take) {
+		tot += B[i][0]; // due to symmetry we can fix x_0=1 w.l.o.g.
+		take--;
+	}
 	for (int k = 0; take && k < N; k++) {
 		int j = B_order[i][k];
-		if (j == i) continue; // already counted
+		if (j == i || j == 0) continue; // already counted
 		tot += B[i][j];
 		take--;
 	}
@@ -467,6 +474,7 @@ void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
 	_c(CPXcallbackgetlocalub(context, rp.ub, i_x(0), i_x(N-1)));
 	for (int i=0; i<N; i++) rp.fixed0[i] = rp.ub[i] < .5;
 	for (int i=0; i<N; i++) rp.fixed1[i] = rp.lb[i] > .5;
+	assert(rp.fixed1[0]); // fixed at the start due to symmetry
 
 	// solution at the current node
 	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), NULL));

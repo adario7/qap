@@ -363,7 +363,7 @@ int main() {
 
 	};
 
-	search_node(0, 0);
+	search_node(1, 1); // assume x_0=1 due to symmetry w.l.o.g.
 
 	while (b_queue.size() + f_queue.size()) {
 		if (PARAM_TIME_LIMIT != -1) {
@@ -391,7 +391,7 @@ int main() {
 			continue;
 		}
 
-		if (node_n && node_n % 500 == 0) {
+		if (node_n && node_n % 1000 == 0) {
 			print_info();
 		}
 		node_n++;
