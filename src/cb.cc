@@ -15,7 +15,7 @@
 
 // static paramteres
 constexpr double EPS = 10; // add cuts that are violated by this much
-constexpr int CUT_TYPE = CPX_USECUT_FORCE;
+constexpr int CUT_TYPE = CPX_USECUT_FILTER;
 
 #define _c(what) if (int _error = what) { \
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
@@ -449,8 +449,8 @@ void calc_F_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 		if (xjk <= 0.4) continue;
 		double f1 = calc_local_Ljk(j, k, rp.fixed0, rp.fixed1);
 		double lj = rp.localL[j], lk = rp.localL[k], df = f1 - lj - lk;
-		double lhs = rp.w[j] + rp.w[k], rhs = lj*xj + lk*xk + df*xjk;
-		double delta = lhs - rhs;
+		assert(df >= 0);
+		double delta = rp.w[j] + rp.w[k] - (lj*xj + lk*xk + df*xjk);
 		if (delta > -EPS) continue;
 		cut_begin(buf, -df, 'G');
 		cut_add(buf, i_w(j), 1);
@@ -568,8 +568,7 @@ int main(int argc, char** argv) {
 
 	add_cons_M(env, lp);
 	add_cons_xw(env, lp);
-	if (!PARAM_LOCAL_L)
-		add_cons_L(env, lp);
+	add_cons_L(env, lp);
 
 	// add a callback to generate cuts
 	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
