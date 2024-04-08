@@ -11,14 +11,17 @@ using namespace std;
 	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
 
 extern atomic_int tot_l_cuts;
+extern atomic_int tot_m_cuts;
 extern atomic_int tot_p_cuts;
 extern atomic_int tot_a_cuts;
-extern atomic_int tot_m_cuts;
 extern atomic_int tot_f_cuts;
 
 void live_display(CPXCALLBACKCONTEXTptr context) {
-	long long node_id;
+	long long node_id, node_cnt;
+	double best_sol;
 	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
+	_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODECOUNT, &node_cnt));
+	_c(CPXcallbackgetinfodbl(context, CPXCALLBACKINFO_BEST_SOL, &best_sol));
 
 	static double x[MAX_N], w[MAX_N];
 	double obj;
@@ -26,8 +29,8 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 	_c(CPXcallbackgetrelaxationpoint(context, w, N, 2*N-1, NULL));
 
 	static double ub[MAX_N], lb[MAX_N];
-	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, 0, N));
-	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, 0, N));
+	_c(CPXcallbackgetlocallb((CPXCALLBACKCONTEXTptr)context, lb, 0, N-1));
+	_c(CPXcallbackgetlocalub((CPXCALLBACKCONTEXTptr)context, ub, 0, N-1));
 
 	ofstream of("/tmp/sol");
 	of << N << endl;
@@ -41,10 +44,21 @@ void live_display(CPXCALLBACKCONTEXTptr context) {
 		of << w[i] << endl;
 	}
 
+	double quadr_obj = 0;
+	for (int i=0; i<N; i++) {
+		double qw = 0;
+		for (int j=0; j<N; j++) {
+			qw += B[i][j] * x[i] * x[j];
+		}
+		of << qw << endl;
+		quadr_obj += qw;
+	}
+
+
 	static long long prev_id = -1;
 	static int prev_l = 0, prev_m = 0, prev_p = 0, prev_a = 0, prev_f = 0;
 
-	cout << "node " << hex << node_id << dec << ", obj = " << obj << endl;
+	cout << "node " << hex << node_id << dec << ", \tobj = " << obj << ", \tqadr obj = " << quadr_obj << endl;
 	if (node_id == prev_id) {
 		cout << " * after " << (tot_l_cuts-prev_l) << " / " << (tot_m_cuts-prev_m) << " / " << (tot_p_cuts-prev_p) << " / " << (tot_a_cuts-prev_a) << " / " << (tot_f_cuts-prev_f) << " cuts" << endl;
 	}

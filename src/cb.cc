@@ -499,7 +499,7 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 		long long node_c;
 		_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODECOUNT, &node_c));
 		if (node_c % 50000 == 0) {
-			cout << "applied l / m / lp / la cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << endl;
+			cout << "applied l / m / lp / la / f cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << " / " << tot_f_cuts << endl;
 			system("free -h");
 		}
 	}
