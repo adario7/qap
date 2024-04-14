@@ -30,6 +30,8 @@ extern bool PARAM_OPPORTUNISTIC;
 extern int PARAM_MEMLIMIT;
 // display nodes as they are explored
 extern bool PARAM_LIVE_SOL;
+// the random seed for the run
+extern int PARAM_SEED;
 
 void read_parameters(int argc, char** argv);
 

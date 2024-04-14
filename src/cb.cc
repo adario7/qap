@@ -613,6 +613,7 @@ int main(int argc, char** argv) {
 		<< "# nodes = " << nodecnt << endl
 		<< "# tot l / m / lp / la / f cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << " / " << tot_f_cuts << endl
 		<< "# cb"
+		<< ", seed = " << PARAM_SEED
 		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
 		<< ", local L = " << PARAM_LOCAL_L
 		<< ", local L pairs = " << PARAM_LOCAL_L_PAIRS

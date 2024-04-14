@@ -35,6 +35,8 @@ bool PARAM_OPPORTUNISTIC = false;
 int PARAM_MEMLIMIT = 14*1024 - 256;
 // display nodes as they are explored
 bool PARAM_LIVE_SOL = false;
+// the random seed for the run
+int PARAM_SEED = -1;
 
 void read_parameters(int argc, char** argv) {
 	int argi = 1;
@@ -79,6 +81,8 @@ void read_parameters(int argc, char** argv) {
 			PARAM_SINGLE_THREAD = stoi(next_arg()) != 0;
 		} else if (arg == "cc") {
 			PARAM_CPLEX_CUTS = stoi(next_arg());
+		} else if (arg == "s") {
+			PARAM_SEED = stoi(next_arg());
 		} else {
 			cout << "unknown parameter: " << arg << endl;
 			abort();
@@ -125,5 +129,8 @@ void apply_parameters(CPXENVptr env, CPXLPptr lp) {
 	}
 	if (PARAM_CPLEX_CUTS == 0) {
 		_c(CPXsetdblparam(env, CPXPARAM_MIP_Limits_CutsFactor, 0));
+	}
+	if (PARAM_SEED >= 0) {
+		_c(CPXsetintparam(env, CPXPARAM_RandomSeed, PARAM_SEED));
 	}
 }
