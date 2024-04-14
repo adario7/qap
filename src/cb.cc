@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,7 @@ struct relpoint_t {
 	double lb[MAX_N], ub[MAX_N];
 	bool fixed0[MAX_N], fixed1[MAX_N];
 	double localL[MAX_N];
+	double obj, objroot;
 };
 
 struct cutbuf_t {
@@ -245,6 +247,7 @@ void calc_L_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 		double ll = rp.localL[i];
 		double delta = rp.w[i] - ll * rp.x[i];
 		if (delta > -EPS) continue;
+		if (PARAM_REL_DELTA && delta/rp.objroot > -1.0*PARAM_REL_DELTA) continue;
 
 		cut_begin(buf, 0, 'G');
 		cut_add(buf, i_w(i), 1);
@@ -281,10 +284,11 @@ void calc_M_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	for (int i = 0; i < N; i++) {
 		if (rp.fixed0[i] || rp.fixed1[i]) continue;
 		double lm = calc_local_M(i, rp.fixed0, rp.fixed1);
-		double delta = -rp.w[i] - lm;
+		double delta = rp.w[i] + lm;
 		for (int j = 0; j < N; j++)
-			delta += rp.x[j] * (B[i][j] + (j==i ? lm : 0));
-		if (delta < EPS) continue;
+			delta -= rp.x[j] * (B[i][j] + (j==i ? lm : 0));
+		if (delta > -EPS) continue;
+		if (PARAM_REL_DELTA && delta/rp.objroot > -2.1*PARAM_REL_DELTA) continue;
 
 		cut_begin(buf, lm, 'L');
 		for (int j = 0; j < N; j++) {
@@ -453,12 +457,13 @@ void calc_F_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	for (int k=j+1; k<N; k++) if (!rp.fixed0[k] && !rp.fixed1[k]) {
 		double xj = rp.x[j], xk = rp.x[k];
 		double xjk = xj + xk - 1;
-		if (xjk <= 0.4) continue;
+		if (xjk <= 0.45) continue;
 		double f1 = calc_local_Ljk(j, k, rp.fixed0, rp.fixed1);
 		double lj = rp.localL[j], lk = rp.localL[k], df = f1 - lj - lk;
 		assert(df >= 0);
 		double delta = rp.w[j] + rp.w[k] - (lj*xj + lk*xk + df*xjk);
 		if (delta > -EPS) continue;
+		if (PARAM_REL_DELTA && delta/rp.objroot > -4.9*PARAM_REL_DELTA) continue;
 		cut_begin(buf, -df, 'G');
 		cut_add(buf, i_w(j), 1);
 		cut_add(buf, i_w(k), 1);
@@ -477,8 +482,9 @@ void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
 	assert(rp.fixed1[0]); // fixed at the start due to symmetry
 
 	// solution at the current node
-	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), NULL));
+	_c(CPXcallbackgetrelaxationpoint(context, rp.x, i_x(0), i_x(N-1), &rp.obj));
 	_c(CPXcallbackgetrelaxationpoint(context, rp.w, i_w(0), i_w(N-1), NULL));
+	rp.objroot = sqrt(rp.obj);
 
 	// local Ls for free vars
 	if (PARAM_LOCAL_L || PARAM_LOCAL_FREE) {
@@ -621,6 +627,7 @@ int main(int argc, char** argv) {
 		<< ", local M = " << PARAM_LOCAL_M
 		<< ", local F = " << PARAM_LOCAL_FREE
 		<< ", cut once = " << PARAM_CUT_ONCE
+		<< ", rel d = " << PARAM_REL_DELTA
 		<< ", exp later = " << PARAM_EXP_LATER
 		<< ", min cuts = " << PARAM_CUTS_MIN
 		<< ", cplex cuts = " << PARAM_CPLEX_CUTS

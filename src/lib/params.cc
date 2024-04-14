@@ -19,6 +19,8 @@ bool PARAM_LOCAL_M = true;
 bool PARAM_LOCAL_FREE = false;
 // when true, only appy cuts once per node
 bool PARAM_CUT_ONCE = false;
+// when != 0, don't add cuts that are violated by less then a fraction of sqrt(obj)
+double PARAM_REL_DELTA = 0;
 // calculate expensive cuts only when there are no more simple cuts
 bool PARAM_EXP_LATER = false;
 // don't bother adding cuts if less then a minimum are found
@@ -65,6 +67,8 @@ void read_parameters(int argc, char** argv) {
 			PARAM_LOCAL_FREE = stoi(next_arg()) != 0;
 		} else if (arg == "co") {
 			PARAM_CUT_ONCE = stoi(next_arg()) != 0;
+		} else if (arg == "r") {
+			PARAM_REL_DELTA = stod(next_arg());
 		} else if (arg == "el") {
 			PARAM_EXP_LATER = stoi(next_arg()) != 0;
 		} else if (arg == "live") {

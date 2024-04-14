@@ -14,6 +14,8 @@ extern bool PARAM_LOCAL_M;
 extern bool PARAM_LOCAL_FREE;
 // when true, only appy cuts once per node
 extern bool PARAM_CUT_ONCE;
+// when != 0, don't add cuts that are violated by less then a fraction of sqrt(obj)
+extern double PARAM_REL_DELTA;
 // calculate expensive cuts only when there are no more simple cuts
 extern bool PARAM_EXP_LATER;
 // don't bother adding cuts if less then a minimum are found
