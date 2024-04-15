@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
 	add_cons_and3(env, lp);
 
 	// write problem
-	//_c(CPXwriteprob(env, lp, "p.lp", NULL));
+	_c(CPXwriteprob(env, lp, "p.lp", NULL));
 
     // solve as mip
 	apply_parameters(env, lp);

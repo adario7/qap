@@ -16,7 +16,7 @@ bool PARAM_LOCAL_L_ALL = false;
 // cuts for a better big M at the local node
 bool PARAM_LOCAL_M = true;
 // cuts between free pairs using local Ls
-bool PARAM_LOCAL_FREE = false;
+int PARAM_LOCAL_FREE = 0;
 // when true, only appy cuts once per node
 bool PARAM_CUT_ONCE = false;
 // when != 0, don't add cuts that are violated by less then a fraction of sqrt(obj)
@@ -64,7 +64,7 @@ void read_parameters(int argc, char** argv) {
 		} else if (arg == "m") {
 			PARAM_LOCAL_M = stoi(next_arg()) != 0;
 		} else if (arg == "f") {
-			PARAM_LOCAL_FREE = stoi(next_arg()) != 0;
+			PARAM_LOCAL_FREE = stoi(next_arg());
 		} else if (arg == "co") {
 			PARAM_CUT_ONCE = stoi(next_arg()) != 0;
 		} else if (arg == "r") {

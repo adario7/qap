@@ -11,7 +11,7 @@ extern bool PARAM_LOCAL_L_ALL;
 // cuts for a better big M at the local node
 extern bool PARAM_LOCAL_M;
 // cuts between free pairs using local Ls
-extern bool PARAM_LOCAL_FREE;
+extern int PARAM_LOCAL_FREE;
 // when true, only appy cuts once per node
 extern bool PARAM_CUT_ONCE;
 // when != 0, don't add cuts that are violated by less then a fraction of sqrt(obj)
