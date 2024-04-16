@@ -526,7 +526,7 @@ void calc_F2_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 	}
 }
 
-void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
+void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp, bool calc_l = true) {
 	// lower/upperbound of the x variables at the local node
 	_c(CPXcallbackgetlocallb(context, rp.lb, i_x(0), i_x(N-1)));
 	_c(CPXcallbackgetlocalub(context, rp.ub, i_x(0), i_x(N-1)));
@@ -540,7 +540,7 @@ void find_relpoint(CPXCALLBACKCONTEXTptr context, relpoint_t& rp) {
 	rp.objroot = sqrt(rp.obj);
 
 	// local Ls for free vars
-	if (PARAM_LOCAL_L || PARAM_LOCAL_FREE) {
+	if (calc_l && (PARAM_LOCAL_L || PARAM_LOCAL_FREE)) {
 		for (int i=0; i<N; i++) {
 			if (rp.fixed0[i] || rp.fixed1[i]) continue;
 			rp.localL[i] = calc_local_L(i, rp.fixed0, rp.fixed1);
@@ -605,11 +605,58 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	}
 }
 
+void branch_strategy(CPXCALLBACKCONTEXTptr context) {
+	relpoint_t rp;
+	find_relpoint(context, rp, false);
+
+	int best_i = -1;
+	double best_score = -1;
+	for (int i=0; i<N; i++) {
+		if (rp.x[i] <= 1e-4) continue;
+		if (rp.x[i] >= 1-1e-4) continue;
+		double unfeas = 0.5 - abs(rp.x[i] - 0.5);
+		double gap;
+		if (PARAM_BRANCHING == 1) {
+			gap = calc_local_M(i, rp.fixed0, rp.fixed1) - calc_local_L(i, rp.fixed0, rp.fixed1);
+		} else if (PARAM_BRANCHING == 2) {
+			gap = -rp.w[i];
+			for (int j=0; j<N; j++) gap += rp.x[i] * rp.x[j] * B[i][j];
+		} else abort();
+		double score = unfeas * gap;
+		if (score > best_score) {
+			best_i = i;
+			best_score = score;
+		}
+	}
+	if (best_i == -1) {
+		cout << "w: no branching candidate" << endl;
+		return;
+	}
+
+	int id_low, id_high;
+	char varlu = 'L';
+	double varbd = 1;
+	_c(CPXcallbackmakebranch(context, 1, &best_i, &varlu, &varbd, 0, 0, NULL, NULL, NULL, NULL, NULL, rp.obj, &id_high));
+	varlu = 'U';
+	varbd = 0;
+	_c(CPXcallbackmakebranch(context, 1, &best_i, &varlu, &varbd, 0, 0, NULL, NULL, NULL, NULL, NULL, rp.obj, &id_low));
+
+	if (PARAM_LIVE_SOL) {
+		long long node_id;
+		_c(CPXcallbackgetinfolong(context, CPXCALLBACKINFO_NODEUID, &node_id));
+		cout << "--> node " << node_id << " branches on " << best_i << " : " << id_low << " / " << id_high << endl;
+	}
+}
+
 int cplex_callback(CPXCALLBACKCONTEXTptr context, CPXLONG contextid, void* userhandle) {
 	CPXENVptr env = (CPXENVptr) userhandle;
 	double ts, te;
 	CPXgettime(env, &ts);
-	cuts_generator(context);
+	if (contextid == CPX_CALLBACKCONTEXT_RELAXATION) {
+		cuts_generator(context);
+	} else {
+		branch_strategy(context);
+	}
 	CPXgettime(env, &te);
 	tot_callback_time += te - ts;
 	return 0;
@@ -653,6 +700,7 @@ void print_results(CPXENVptr env, CPXLPptr lp, double time) {
 		<< ", exp later = " << PARAM_EXP_LATER
 		<< ", min cuts = " << PARAM_CUTS_MIN
 		<< ", cplex cuts = " << PARAM_CPLEX_CUTS
+		<< ", branching = " << PARAM_BRANCHING
 		<< ", single thread = " << PARAM_SINGLE_THREAD
 		<< ", opportunistic = " << PARAM_OPPORTUNISTIC
 		<< ", eps = " << EPS
@@ -688,7 +736,9 @@ int main(int argc, char** argv) {
 	add_cons_L(env, lp);
 
 	// add a callback to generate cuts
-	_c(CPXcallbacksetfunc(env, lp, CPX_CALLBACKCONTEXT_RELAXATION, cplex_callback, env));
+	auto mask = CPX_CALLBACKCONTEXT_RELAXATION;
+	if (PARAM_BRANCHING) mask |=CPX_CALLBACKCONTEXT_BRANCHING;
+	_c(CPXcallbacksetfunc(env, lp, mask, cplex_callback, env));
 
 	// solve as mip
 	apply_parameters(env, lp);

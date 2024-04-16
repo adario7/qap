@@ -27,6 +27,8 @@ bool PARAM_EXP_LATER = false;
 int PARAM_CUTS_MIN = 4;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
 int PARAM_CPLEX_CUTS = 0;
+// 0 = default, 1 = M-L gap, 2 = quadr-linear gap
+int PARAM_BRANCHING = 0;
 // -1 to disable
 double PARAM_TIME_LIMIT = 12 * 3600;
 // single vs multi thread
@@ -75,6 +77,8 @@ void read_parameters(int argc, char** argv) {
 			PARAM_LIVE_SOL = stoi(next_arg()) != 0;
 		} else if (arg == "cm") {
 			PARAM_CUTS_MIN = stoi(next_arg());
+		} else if (arg == "b") {
+			PARAM_BRANCHING = stoi(next_arg());
 		} else if (arg == "tl") {
 			PARAM_TIME_LIMIT = stod(next_arg());
 		} else if (arg == "opp") {

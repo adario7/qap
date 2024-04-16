@@ -22,6 +22,8 @@ extern bool PARAM_EXP_LATER;
 extern int PARAM_CUTS_MIN;
 // -1 = disable all cut types, 0 = usa a cut factor of zero, 1 = default cplex cuts
 extern int PARAM_CPLEX_CUTS;
+// 0 = default, 1 = M-L gap, 2 = quadr-linear gap
+extern int PARAM_BRANCHING;
 // -1 to disable
 extern double PARAM_TIME_LIMIT;
 // single vs multi thread
