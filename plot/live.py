@@ -24,11 +24,13 @@ if __name__=='__main__':
 		sns.heatmap(S, vmin=vmin, vmax=vmax, linewidths=.5, linecolor='#000', cmap='Greys', cbar=cbar, square=True, xticklabels=False, yticklabels=False, ax=ax, annot=False)
 
 
-	fig, (ax1, ax2, ax3, ax4) = plt.subplots(1,4, figsize=(16, 4))
+	fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3, figsize=(12, 8))
 	mkplot(ax1, 0, 1)
 	mkplot(ax2, 0, 1)
 	mkplot(ax3, None, None, True)
 	mkplot(ax4, None, None, True)
+	mkplot(ax5, None, None, True)
+	mkplot(ax6, None, None, True)
 	plt.show()
 
 	f.close()

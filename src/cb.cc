@@ -267,8 +267,13 @@ void calc_M_cuts(const relpoint_t& rp, cutbuf_t& buf) {
 		if (delta > -EPS) continue;
 		if (PARAM_REL_DELTA && delta/rp.objroot > -2.1*PARAM_REL_DELTA) continue;
 
-		cut_begin(buf, lm, 'L');
+		double rhs = lm;
+		for (int j = 0; j < N; j++)
+			if (rp.fixed1[j]) rhs -= B[i][j];
+
+		cut_begin(buf, rhs, 'L');
 		for (int j = 0; j < N; j++) {
+			if (rp.fixed0[j] || rp.fixed1[j]) continue;
 			cut_add(buf, i_x(j), B[i][j] + (i==j ? lm : 0));
 		}
 		cut_add(buf, i_w(i), -1);
@@ -581,9 +586,9 @@ void cuts_generator(CPXCALLBACKCONTEXTptr context) {
 	// compute enabled cuts
 	if (PARAM_LOCAL_L)
 		calc_L_cuts(rp, buf);
-	if (PARAM_LOCAL_M)
-		calc_M_cuts(rp, buf);
 	bool enable_exp = !PARAM_EXP_LATER || buf.n_l==0;
+	if (PARAM_LOCAL_M && enable_exp)
+		calc_M_cuts(rp, buf);
 	if (PARAM_LOCAL_L_PAIRS && enable_exp)
 		calc_P_cuts(rp, buf);
 	if (PARAM_LOCAL_L_ALL && enable_exp)
