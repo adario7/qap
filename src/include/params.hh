@@ -24,6 +24,8 @@ extern int PARAM_CUTS_MIN;
 extern int PARAM_CPLEX_CUTS;
 // 0 = default, 1 = M-L gap, 2 = quadr-linear gap
 extern int PARAM_BRANCHING;
+// dfs reduces memory problmes, degrades performance
+extern bool PARAM_DFS;
 // -1 to disable
 extern double PARAM_TIME_LIMIT;
 // single vs multi thread

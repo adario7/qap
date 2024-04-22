@@ -29,6 +29,8 @@ int PARAM_CUTS_MIN = 4;
 int PARAM_CPLEX_CUTS = 0;
 // 0 = default, 1 = M-L gap, 2 = quadr-linear gap
 int PARAM_BRANCHING = 0;
+// dfs reduces memory problmes, degrades performance
+bool PARAM_DFS = 0;
 // -1 to disable
 double PARAM_TIME_LIMIT = 12 * 3600;
 // single vs multi thread
@@ -36,7 +38,7 @@ bool PARAM_SINGLE_THREAD = false;
 // deterministic vs opportunistic
 bool PARAM_OPPORTUNISTIC = false;
 // memory limit
-int PARAM_MEMLIMIT = 14*1024 - 256;
+int PARAM_MEMLIMIT = 2048;
 // display nodes as they are explored
 bool PARAM_LIVE_SOL = false;
 // the random seed for the run
@@ -79,6 +81,8 @@ void read_parameters(int argc, char** argv) {
 			PARAM_CUTS_MIN = stoi(next_arg());
 		} else if (arg == "b") {
 			PARAM_BRANCHING = stoi(next_arg());
+		} else if (arg == "df") {
+			PARAM_DFS = stoi(next_arg()) != 0;
 		} else if (arg == "tl") {
 			PARAM_TIME_LIMIT = stod(next_arg());
 		} else if (arg == "opp") {
@@ -137,6 +141,9 @@ void apply_parameters(CPXENVptr env, CPXLPptr lp) {
 	}
 	if (PARAM_CPLEX_CUTS == 0) {
 		_c(CPXsetdblparam(env, CPXPARAM_MIP_Limits_CutsFactor, 0));
+	}
+	if (PARAM_DFS) {
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_NodeSelect, CPX_NODESEL_DFS));
 	}
 	if (PARAM_SEED >= 0) {
 		_c(CPXsetintparam(env, CPXPARAM_RandomSeed, PARAM_SEED));
