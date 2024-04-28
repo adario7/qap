@@ -687,8 +687,10 @@ void print_results(CPXENVptr env, CPXLPptr lp, double time) {
 	}
 	cerr << "# status = " << solstat << endl;
 	cerr << "# obj = " << objval << endl;
-	if (solstat != CPXMIP_OPTIMAL)
+	if (solstat != CPXMIP_OPTIMAL && solstat != CPXMIP_OPTIMAL_TOL) {
 		cerr << "# bound = " << best_boud << endl;
+		cerr << "# gap = " << 100*(objval - best_boud)/objval << endl;
+	}
 	cerr << "# time = " << time << ", in cb = " << tot_callback_time << endl
 		<< "# nodes = " << nodecnt << endl
 		<< "# tot l / m / lp / la / f cuts = " << tot_l_cuts << " / " << tot_m_cuts << " / " << tot_p_cuts << " / " << tot_a_cuts << " / " << tot_f_cuts << endl

@@ -240,7 +240,7 @@ bool queue_request(node_queue& q, vector<node_t>& out, double& local_inc) {
 	out.clear();
 	int size = q.b_queue.size() + q.f_queue.size();
 	if (size == 0 && q.n_working == 0) return false;
-	int take = clamp(size / 4, 4, 64);
+	int take = clamp(size / 4, 4, PARAM_SINGLE_THREAD ? 8 : 64);
 	while((q.b_queue.size() || q.f_queue.size()) && out.size() < take) {
 		node_t n;
 		if (q.f_queue.size()) {

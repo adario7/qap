@@ -41,6 +41,22 @@ def B_generator(n, n1, n2):
                         B[j, i] = B[i, j]
     return B
 
+def gen_one(n1, n2, d):
+    # Calculate n
+    n = n1 * n2
+
+    # Generate matrices A and B
+    A = A_generator(n, d)
+    B = B_generator(n, n1, n2)
+
+    # Write matrices to file
+    filename = f"tai{n}c_{n1}x{n2}_{d}"
+    with open(filename, 'w') as file:
+        file.write(f"{n}\n")
+        for row in A:
+            file.write(' '.join(map(str, row)) + '\n')
+        for row in B:
+            file.write(' '.join(map(str, row)) + '\n')
 
 def main():
     # Parse command line arguments
@@ -50,21 +66,7 @@ def main():
     parser.add_argument('d', type=int, help='Integer d')
     args = parser.parse_args()
 
-    # Calculate n
-    n = args.n1 * args.n2
-
-    # Generate matrices A and B
-    A = A_generator(n, args.d)
-    B = B_generator(n, args.n1, args.n2)
-
-    # Write matrices to file
-    filename = f"tai{n}c_{args.n1}x{args.n2}_{args.d}"
-    with open(filename, 'w') as file:
-        file.write(f"{n}\n")
-        for row in A:
-            file.write(' '.join(map(str, row)) + '\n')
-        for row in B:
-            file.write(' '.join(map(str, row)) + '\n')
+    gen_one(args.n1, args.n2, args.d)
 
 if __name__ == "__main__":
     main()
