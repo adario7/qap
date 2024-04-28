@@ -384,6 +384,7 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 		} else {
 			gap = localM[i] - localL[i];
 		}
+		gap *= 1 + (double(rand()) / RAND_MAX)*1e-3;
 		double score = unfeas * gap;
 		if (score > best_score) {
 			best_score = score;
@@ -418,6 +419,7 @@ int main(int argc, char** argv) {
 	read_inputs();
 	preorder_B();
 	calc_root_LM();
+	srand(PARAM_SEED);
 
 	int status;
     CPXENVptr env = CPXopenCPLEX(&status);
@@ -445,6 +447,7 @@ int main(int argc, char** argv) {
 			CPXENVptr env = CPXopenCPLEX(&status);
 			if (status) abort();
 			_c(CPXsetintparam(env, CPXPARAM_Threads, 1));
+			if (PARAM_SEED >= 0) _c(CPXsetintparam(env, CPXPARAM_RandomSeed, PARAM_SEED));
 			CPXLPptr lp = create_lp(env);
 			double local_inc = INFINITY;
 			double local_sol[MAX_N];

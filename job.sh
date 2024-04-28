@@ -15,7 +15,7 @@ sleep 0.1
 stress-ng -c 4 --cpu-ops=100
 
 # set limits
-ulimit -v 14884864
+ulimit -v 14680064
 
 
 
