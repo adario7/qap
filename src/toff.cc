@@ -159,10 +159,12 @@ int main(int argc, char **argv) {
 	_c(CPXgettime(env, &t_end));
 
     // print solution
-    double objval;
-	int solstat;
+    double objval, best_bound;
+	int solstat, nodecnt;
 	vector<double> sol(N*N + N);
 	_c(CPXsolution(env, lp, &solstat, &objval, sol.data(), NULL, NULL, NULL));
+	_c(CPXgetbestobjval(env, lp, &best_bound));
+	nodecnt = CPXgetnodecnt(env, lp);
 
 	cout << "status = " << solstat << endl;
 	cout << "solution = " << objval << endl;
@@ -171,8 +173,13 @@ int main(int argc, char **argv) {
 		cerr << i << " " << int(round(sol[i_x(i)])) << endl;
 	}
 	cerr << "# status = " << solstat << endl;
+	if (solstat != CPXMIP_OPTIMAL && solstat != CPXMIP_OPTIMAL_TOL) {
+		cerr << "# bound = " << best_bound << endl;
+		cerr << "# gap = " << 100*(objval - best_bound)/objval << endl;
+	}
 	cerr << "# obj = " << objval << endl;
-	cerr << "# time = " << (t_end - t_start) << endl;
+	cerr << "# time = " << (t_end - t_start) << endl
+		<< "# nodes = " << nodecnt << endl;
 	cerr << "# toff" << endl;
 
     // clean up

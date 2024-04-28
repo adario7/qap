@@ -275,7 +275,7 @@ void queue_submit(node_queue& q, const vector<node_t>& input, vector<node_t>& da
 		else q.b_queue.push(n);
 		q.glob_bound[n.obj]++;
 		q.tot_depth += n.fixed.count();
-		if (n.id && n.id % 5000 == 0) info = true;
+		if (n.id && n.id % 10000 == 0) info = true;
 	}
 	if (local_inc < q.incumbent) {
 		info = true;
@@ -414,6 +414,14 @@ void expand_node(CPXENVptr env, CPXLPptr lp, const node_t& node, vector<node_t>&
 	}
 }
 
+bool has_time(const node_queue& nq) {
+	if (PARAM_TIME_LIMIT == -1) return true;
+	double t_end;
+	_c(CPXgettime(nq.env, &t_end));
+	double took = t_end - nq.t_start;
+	return took < PARAM_TIME_LIMIT;
+}
+
 int main(int argc, char** argv) {
 	read_parameters(argc, argv);
 	read_inputs();
@@ -456,7 +464,7 @@ int main(int argc, char** argv) {
 				eval_state(env, lp, 1, 1, out_buf, local_inc, local_sol); // assume x_0=1 due to symmetry w.l.o.g.
 				queue_submit(nq, read_buf,out_buf, local_inc, local_sol);
 			}
-			while (queue_request(nq, read_buf, local_inc)) {
+			while (has_time(nq) && queue_request(nq, read_buf, local_inc)) {
 				out_buf.clear();
 				for (node_t& n : read_buf)
 					expand_node(env, lp, n, out_buf, local_inc, local_sol);
@@ -481,6 +489,15 @@ int main(int argc, char** argv) {
 		cerr << int(round(nq.inc_sol[i_x(i)])) << endl;
 	}
 	cerr << "# obj = " << nq.incumbent << endl;
+	if (nq.glob_bound.empty()) {
+		cerr << "# status = " << CPXMIP_OPTIMAL << endl;
+	} else {
+		double b = nq.glob_bound.begin()->first;
+		double g = 100 * (nq.incumbent - b) / nq.incumbent;
+		cerr << "# status = " << CPXMIP_TIME_LIM_FEAS << endl
+			<< "# bound = " << b << endl
+			<< "# gap = " << g << endl;
+	}
 	//cerr << "# bound = " << curr_bound << endl;
 	cerr << "# nodes = " << nq.n_count << endl;
 	cerr << "# time = " << t_took << endl;
