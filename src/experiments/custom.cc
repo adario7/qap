@@ -28,12 +28,12 @@ using namespace std;
 using nbitset = bitset<MAX_N>;
 
 struct node_t {
+	char branch;
 	uint id;
+	double obj;
+	double unfeas;
 	nbitset fixed;
 	nbitset fvalue;
-	double obj;
-	int branch;
-	double unfeas;
 };
 
 struct cmp_feas { bool operator()(const node_t& a, const node_t& b) const {
@@ -368,7 +368,7 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 	if (solstat != CPX_STAT_OPTIMAL) return;
 	// cannot improve incumbent
 	if (objval > local_inc) return;
-	int branch = -1;
+	char branch = -1;
 	double best_score = 0;
 	double most_unfeas = 0, tot_unfeas = 0;
 	constexpr double EPS = 1E-6;
@@ -398,8 +398,9 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 		}
 	} else { // noninteger solution
 		out_buf.push_back({
-			.fixed = fixed, .fvalue = fvalue,
-			.obj = objval, .branch = branch, .unfeas = tot_unfeas
+			.branch = branch,
+			.obj = objval,  .unfeas = tot_unfeas,
+			.fixed = fixed, .fvalue = fvalue
 		});
 	}
 }
@@ -501,7 +502,12 @@ int main(int argc, char** argv) {
 	//cerr << "# bound = " << curr_bound << endl;
 	cerr << "# nodes = " << nq.n_count << endl;
 	cerr << "# time = " << t_took << endl;
-	cerr << "# custom" << endl;
+	cerr << "# custom"
+		<< ", seed = " << PARAM_SEED
+		<< ", single thread = " << PARAM_SINGLE_THREAD
+		<< ", tl = " << PARAM_TIME_LIMIT
+		<< endl;
+	cerr << "# n1 = " << M << endl;
 
     // clean up
     _c(CPXcloseCPLEX(&env));

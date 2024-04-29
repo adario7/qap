@@ -118,9 +118,13 @@ void apply_parameters(CPXENVptr env, CPXLPptr lp) {
 		_c(CPXsetintparam(env, CPXPARAM_Parallel, CPX_PARALLEL_OPPORTUNISTIC));
 	}
 	if (PARAM_MEMLIMIT > 0) {
-		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_File, 2));
+		system("ls -ld /var/tmp/cpx* 2>&1");
+		system("rm -rf /var/tmp/cpx* 2>&1");
+		system("df -h /var/tmp 2>&1");
+		_c(CPXsetintparam(env, CPXPARAM_MIP_Strategy_File, 3));
 		_c(CPXsetintparam(env, CPXPARAM_Emphasis_Memory, 1));
 		_c(CPXsetdblparam(env, CPXPARAM_WorkMem, PARAM_MEMLIMIT));
+		_c(CPXsetstrparam(env, CPXPARAM_WorkDir, "/var/tmp"));
 	}
 	if (PARAM_CPLEX_CUTS == -1) {
 		_c(CPXsetintparam(env, CPXPARAM_MIP_Cuts_BQP, -1));

@@ -3,7 +3,7 @@
 #SBATCH --partition arrow 
 #SBATCH --ntasks 1
 #SBATCH --mem 14GB
-#SBATCH --time 12:05:00
+#SBATCH --time 04:30:00
 
 set -x
 
@@ -28,7 +28,7 @@ input_file="$2"
 shift 2
 params="$@"
 # Run the command with the provided parameters
-./src/build/$command $params < "instance/$input_file" > "out/o_$name" 2> "out/e_$name"
+./src/build/$command tl 14400 $params < "instance/$input_file" > "out/o_$name" 2> "out/e_$name"
 
 
 

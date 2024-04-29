@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
-#include <cmath>
 #include <cstdlib>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +18,10 @@ constexpr double EPS = 10; // add cuts that are violated by this much
 constexpr int CUT_TYPE = CPX_USECUT_FILTER;
 
 #define _c(what) if (int _error = what) { \
-	cout << "CPX error: " #what << endl; cout << "CPX error: " << _error << endl; abort(); }
+	cout << "CPX error " << _error << ": " #what << endl; abort(); }
+
+#define _w(what) if (int _error = what) { \
+	cout << "Warn: CPX error " << _error << ": " #what << endl;  }
 
 using namespace std;
 
@@ -751,7 +753,7 @@ int main(int argc, char** argv) {
 	apply_parameters(env, lp);
 	double t_start, t_end;
 	_c(CPXgettime(env, &t_start));
-	_c(CPXmipopt(env, lp));
+	_w(CPXmipopt(env, lp));
 	_c(CPXgettime(env, &t_end));
 
 	// results

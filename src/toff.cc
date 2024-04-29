@@ -180,7 +180,14 @@ int main(int argc, char **argv) {
 	cerr << "# obj = " << objval << endl;
 	cerr << "# time = " << (t_end - t_start) << endl
 		<< "# nodes = " << nodecnt << endl;
-	cerr << "# toff" << endl;
+	cerr << "# toff"
+		<< ", seed = " << PARAM_SEED
+		<< ", dynamic search = " << PARAM_DYNAMIC_SEARCH
+		<< ", single thread = " << PARAM_SINGLE_THREAD
+		<< ", tl = " << PARAM_TIME_LIMIT
+		<< ", ml = " << PARAM_MEMLIMIT
+		<< endl;
+	cerr << "# n1 = " << M << endl;
 
     // clean up
     _c(CPXfreeprob(env, &lp));
