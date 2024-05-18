@@ -36,9 +36,6 @@ struct node_t {
 	nbitset fvalue;
 };
 
-struct cmp_feas { bool operator()(const node_t& a, const node_t& b) const {
-	return a.unfeas > b.unfeas;
-} };
 struct cmp_bound { bool operator()(const node_t& a, const node_t& b) const {
 	return a.obj > b.obj;
 } };
@@ -49,7 +46,6 @@ struct node_queue {
 	mutex monitor;
     condition_variable cv;
 	priority_queue<node_t, vector<node_t>, cmp_bound> b_queue;
-	priority_queue<node_t, vector<node_t>, cmp_feas> f_queue;
 	map<double, int, less<double>> glob_bound;
 	long tot_depth = 0;
 	uint n_count = 0;
@@ -220,7 +216,7 @@ void queue_print_info(node_queue& q) {
 	_c(CPXgettime(q.env, &t_end));
 	double gap = 100 * (q.incumbent - b) / q.incumbent;
 	double avgd = double(q.tot_depth) / q.glob_bound.size();
-	cout << int(t_end-q.t_start) << "s /\t "<< q.n_count << " /\t " << (q.b_queue.size()+q.f_queue.size()) << " /\t " << avgd << " /\t " << q.incumbent << " /\t " << b << " /\t " << gap << "%" << endl;
+	cout << int(t_end-q.t_start) << "s /\t "<< q.n_count << " /\t " << q.b_queue.size() << " /\t " << avgd << " /\t " << q.incumbent << " /\t " << b << " /\t " << gap << "%" << endl;
 }
 
 void forget_bound(node_queue& q, const node_t& n) {
@@ -233,23 +229,17 @@ void forget_bound(node_queue& q, const node_t& n) {
 bool queue_request(node_queue& q, vector<node_t>& out, double& local_inc) {
 	unique_lock<mutex> lock(q.monitor);
 	q.cv.wait(lock, [&q] {
-		bool empty = q.b_queue.empty() && q.f_queue.empty();
+		bool empty = q.b_queue.empty();
 		return !empty || (empty && q.n_working == 0);
 	});
 	local_inc = q.incumbent;
 	out.clear();
-	int size = q.b_queue.size() + q.f_queue.size();
+	int size = q.b_queue.size();
 	if (size == 0 && q.n_working == 0) return false;
-	int take = clamp(size / 4, 4, PARAM_SINGLE_THREAD ? 8 : 64);
-	while((q.b_queue.size() || q.f_queue.size()) && out.size() < take) {
-		node_t n;
-		if (q.f_queue.size()) {
-			n = q.f_queue.top();
-			q.f_queue.pop();
-		} else if (q.b_queue.size()) {
-			n = q.b_queue.top();
-			q.b_queue.pop();
-		} else abort();
+	int take = clamp(size / 4, PARAM_SINGLE_THREAD ? 1 : 4, PARAM_SINGLE_THREAD ? 4 : 32);
+	while(q.b_queue.size() && out.size() < take) {
+		node_t n = q.b_queue.top();
+		q.b_queue.pop();
 		if (n.obj > q.incumbent) {
 			forget_bound(q, n);
 			continue; // we got a better incumbent in the meantime
@@ -260,23 +250,24 @@ bool queue_request(node_queue& q, vector<node_t>& out, double& local_inc) {
 	return true;
 }
 
-void queue_submit(node_queue& q, const vector<node_t>& input, vector<node_t>& data, double local_inc, double* local_sol) {
+void queue_submit(node_queue& q, const vector<node_t>& input, vector<node_t>& data, double local_inc, double* local_sol, int totnodes) {
 	unique_lock<mutex> lock(q.monitor);
 	for (const node_t& n : input)
 		forget_bound(q, n);
 	q.n_working--;
-	bool info = false;
+	int prevcout = q.n_count;
+	q.n_count += max(0ul, totnodes - data.size()); // count the internal diving nodes
 	for (auto& n : data) {
 		if (n.obj >= q.incumbent) continue;
 		n.id = q.n_count++;
-		int sp_every = 5 + q.n_count/8096;
-		bool speculative = q.incumbent == INFINITY || (q.n_count/1024)%sp_every==0;
-		if (speculative) q.f_queue.push(n);
-		else q.b_queue.push(n);
+		q.b_queue.push(n);
 		q.glob_bound[n.obj]++;
 		q.tot_depth += n.fixed.count();
-		if (n.id && n.id % 10000 == 0) info = true;
 	}
+	bool info = false;
+	const int printevery = 10000;
+	if (prevcout/printevery != q.n_count/printevery) info = true;
+	
 	if (local_inc < q.incumbent) {
 		info = true;
 		q.incumbent = local_inc;
@@ -306,7 +297,15 @@ CPXLPptr create_lp(CPXENVptr env) {
 	return lp;
 }
 
-void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vector<node_t>& out_buf, double& local_inc, double* local_sol) {
+pair<nbitset, nbitset> next_state(nbitset fixed, nbitset fvalue, int branch, int direction) {
+	nbitset f = fixed;
+	f.set(branch);
+	nbitset fval = fvalue;
+	fval.set(branch, direction);
+	return {f, fval};
+}
+
+void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vector<node_t>& out_buf, double& local_inc, double* local_sol, int& totnodes, bool dive = true) {
 	// fix variables bounds
 	int bound_indices[MAX_N];
 	char bound_lu[MAX_N];
@@ -396,7 +395,26 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 			local_inc = objval;
 			copy_n(sol, N, local_sol);
 		}
-	} else { // noninteger solution
+	} else if (dive) {
+		totnodes++; // count this as an internal node, even though it does not end up being in the queue
+		constexpr int MROWS = MAX_N*2, MCOLS = MAX_N*2+1;
+		int numCols = CPXgetnumcols(env, lp), numRows = CPXgetnumrows(env, lp);
+		int rstat[MROWS], cstat[MCOLS];
+		double rdual[MROWS], rprim[MROWS], cprim[MCOLS], cdual[MCOLS];
+		_c(CPXgetbase(env, lp, cstat, rstat));
+		_c(CPXgetx(env, lp, cprim, 0, numCols-1));
+		_c(CPXgetslack(env, lp, rprim, 0, numRows-1));
+		_c(CPXgetdj(env, lp, cdual, 0, numCols-1));
+		_c(CPXgetpi(env, lp, rdual, 0, numRows-1));
+		int divedir = M <= N/2 ? 0 : 1;
+		for (int direction : {divedir, 1-divedir}) {
+			if (direction != divedir) // the second one
+				_c(CPXcopystart(env, lp, cstat, rstat, cprim, rprim, cdual, rdual));
+			auto [f, fval] = next_state(fixed, fvalue, branch, direction);
+			eval_state(env, lp, f, fval, out_buf, local_inc, local_sol, totnodes, direction == divedir);
+		}
+	} else {
+		totnodes++;
 		out_buf.push_back({
 			.branch = branch,
 			.obj = objval,  .unfeas = tot_unfeas,
@@ -405,14 +423,13 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 	}
 }
 
-void expand_node(CPXENVptr env, CPXLPptr lp, const node_t& node, vector<node_t>& out_buf, double& local_inc, double* local_sol) {
-	for (bool direction : {0, 1}) {
-		nbitset f = node.fixed;
-		f.set(node.branch);
-		nbitset fval = node.fvalue;
-		fval.set(node.branch, direction);
-		eval_state(env, lp, f, fval, out_buf, local_inc, local_sol);
+int expand_node(CPXENVptr env, CPXLPptr lp, const node_t& node, vector<node_t>& out_buf, double& local_inc, double* local_sol) {
+	int totnodes = 0;
+	for (int direction : {0, 1}) {
+		auto [f, fval] = next_state(node.fixed, node.fvalue, node.branch, direction);
+		eval_state(env, lp, f, fval, out_buf, local_inc, local_sol, totnodes);
 	}
+	return totnodes;
 }
 
 bool has_time(const node_queue& nq) {
@@ -462,14 +479,16 @@ int main(int argc, char** argv) {
 			double local_sol[MAX_N];
 			vector<node_t> read_buf, out_buf;
 			if (th_id == 0) {
-				eval_state(env, lp, 1, 1, out_buf, local_inc, local_sol); // assume x_0=1 due to symmetry w.l.o.g.
-				queue_submit(nq, read_buf,out_buf, local_inc, local_sol);
+				int tn = 0;
+				eval_state(env, lp, 1, 1, out_buf, local_inc, local_sol, tn); // assume x_0=1 due to symmetry w.l.o.g.
+				queue_submit(nq, read_buf,out_buf, local_inc, local_sol, tn);
 			}
 			while (has_time(nq) && queue_request(nq, read_buf, local_inc)) {
 				out_buf.clear();
+				int totnodes = 0;
 				for (node_t& n : read_buf)
-					expand_node(env, lp, n, out_buf, local_inc, local_sol);
-				queue_submit(nq, read_buf, out_buf, local_inc, local_sol);
+					totnodes += expand_node(env, lp, n, out_buf, local_inc, local_sol);
+				queue_submit(nq, read_buf, out_buf, local_inc, local_sol, totnodes);
 			}
 			_c(CPXfreeprob(env, &lp));
 			_c(CPXcloseCPLEX(&env));
