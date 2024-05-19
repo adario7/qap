@@ -36,8 +36,5 @@ target_link_libraries(nocb PRIVATE lib ${CPLEX_LIBRARIES})
 add_executable(custom experiments/custom.cc)
 target_link_libraries(custom PRIVATE lib ${CPLEX_LIBRARIES})
 
-add_executable(mixed experiments/mixed.cc)
-target_link_libraries(mixed PRIVATE lib ${CPLEX_LIBRARIES})
-
-add_executable(a_star experiments/a_star.cc)
-target_link_libraries(a_star PRIVATE lib ${CPLEX_LIBRARIES})
+add_executable(quadr experiments/cplex_q.cc)
+target_link_libraries(quadr PRIVATE lib ${CPLEX_LIBRARIES})
