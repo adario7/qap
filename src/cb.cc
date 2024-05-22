@@ -746,7 +746,7 @@ int main(int argc, char** argv) {
 
 	// add a callback to generate cuts
 	auto mask = CPX_CALLBACKCONTEXT_RELAXATION;
-	if (PARAM_BRANCHING) mask |=CPX_CALLBACKCONTEXT_BRANCHING;
+	if (PARAM_BRANCHING) mask |= CPX_CALLBACKCONTEXT_BRANCHING;
 	_c(CPXcallbacksetfunc(env, lp, mask, cplex_callback, env));
 
 	// solve as mip
