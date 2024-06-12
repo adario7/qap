@@ -23,8 +23,10 @@ df0['size'] = pd.Categorical(df0['size'], categories=df0['size'].unique(),ordere
 configuration = ['program', 'params']
 instance = ['name', 'size', 'density']
 
-df0['configuration'] = df0.apply(lambda row: f"{row['program']} - {row['params']}" if row['program'] == 'kb' else row['program'], axis=1)
+df0['configuration'] = df0.apply(lambda row: f"{row['program']}: {row['params']}" if row['program'] != 'toff' else row['program'], axis=1)
 
+solved_by_any = df0[instance].drop_duplicates()
+print(f"solved by any = {len(solved_by_any)}")
 
 # solved config heatmap
 df = df0.copy()
@@ -55,10 +57,10 @@ plt.savefig("build/tot-time.eps")
 presets = [
 	('base', [ ['kb', 'no-cuts'], ['kb', 'no-m'], ['kb', 'default'] ]),
 	('variants', [ ['kb', 'default'], ['kb', 'p'], ['kb', 'a'], ['kb', 'f'], ['kb', 'r1'], ['kb', 'r3'], ['kb', 'b1'], ['kb', 'b2'], ['kb', 'dfs'], ['kb', 'f+r1+b2'] ]),
-	('custom', [ ['intuitivo', 'default'], ['kb', 'f+r1+b2'], ['kb ad-hoc', 'default'] ]),
+	('custom', [ ['intuitivo', 'default'], ['kb', 'f+r1+b2'], ['kb ad-hoc', 'b1'], ['kb ad-hoc', 'b2'] ]),
 ]
 
-def pretty_df(df, pconf):
+def pretty_df(df, pconf, solved_by_all):
 	# sort
 	order_df = pd.DataFrame(pconf, columns=['program', 'params'])
 	order_df['order'] = range(len(order_df))
@@ -66,15 +68,16 @@ def pretty_df(df, pconf):
 	df = merged_df.sort_values('order').drop(columns='order')
 	# format
 	df['params'] = df['params'].apply(lambda x: "\\code{" + x + "}")
-	bt, bn, bs = df['gmean_time'].min(), df['gmean_nodes'].min(), df['solved'].max()
-	df['gmean_time'] = df['gmean_time'].apply(lambda x: "%.2f" % x if x != bt else "\\textbf{%.2f}" % x)
-	df['gmean_nodes'] = df['gmean_nodes'].apply(lambda x: "%.0f" % x if x != bn else "\\textbf{%.0f}" % x)
+	bt, bt2, bn, bs = df['time_all'].min(), df['time_any'].min(), df['nodes_all'].min(), df['solved'].max()
+	df['time_all'] = df['time_all'].apply(lambda x: "%.2f" % x if x != bt else "\\textbf{%.2f}" % x)
+	df['time_any'] = df['time_any'].apply(lambda x: "%.2f" % x if x != bt2 else "\\textbf{%.2f}" % x)
+	df['nodes_all'] = df['nodes_all'].apply(lambda x: "%.0f" % x if x != bn else "\\textbf{%.0f}" % x)
 	df['solved'] = df['solved'].apply(lambda x: "%.0f" % x if x != bs else "\\textbf{%.0f}" % x)
 	# rename
-	df = df[['program', 'params', 'gmean_time', 'gmean_nodes', 'solved']]
-	df = df.rename(columns={'program': 'Implementazione', 'params': 'Variante', 'gmean_time': 'Tempo medio (s)', 'gmean_nodes': 'Nodi medi', 'solved': 'Istanze risolte'})
-	if df['Implementazione'].nunique() == 1:
-		df = df.drop(columns=['Implementazione'])
+	df = df[['program', 'params', 'time_any', 'time_all', 'nodes_all', 'solved']]
+	if df['program'].nunique() == 1:
+		df = df.drop(columns=['program'])
+	df = df.rename(columns={'program': 'Implementazione', 'params': 'Variante', 'time_any': f'Tempo \\tiny({{{len(solved_by_any)}}} i.)', 'time_all': f'Tempo \\tiny{{({len(solved_by_all)} i.)}}', 'nodes_all': f'Nodi \\tiny{{({len(solved_by_all)} i.)}}', 'solved': 'Istanze risolte'})
 	return df
 
 def set_name(set_configs, x):
@@ -114,24 +117,34 @@ for pname, pconf in presets:
 
 	print()
 
-	# mean values
+	# mean "any" values
+	any_entries = pd.merge(solved_by_any, df[configuration].drop_duplicates(), how="cross")
+	merged_df = pd.merge(any_entries, df, on=(configuration + instance), how="left")
+	merged_df['time'] = merged_df['time'].fillna(14400)
+	grouped = merged_df.groupby(configuration)
+	SHIFT = 1
+	means_any = grouped['time'].apply(lambda x: gmean(x+SHIFT)-SHIFT).reset_index(name='time_any')
+	print(means_any)
+
+	# mean "all" values
 	merged_df = pd.merge(df, solved_by_all, on=instance)
 	grouped = merged_df.groupby(configuration)
 	SHIFT = 1
-	mean_time = grouped['time'].apply(lambda x: gmean(x+SHIFT)-SHIFT).reset_index(name='gmean_time')
+	mean_time = grouped['time'].apply(lambda x: gmean(x+SHIFT)-SHIFT).reset_index(name='time_all')
 	SHIFT = 1000
-	mean_nodes = grouped['nodes'].apply(lambda x: gmean(x+SHIFT)-SHIFT).reset_index(name='gmean_nodes')
+	mean_nodes = grouped['nodes'].apply(lambda x: gmean(x+SHIFT)-SHIFT).reset_index(name='nodes_all')
 	means = pd.merge(mean_time, mean_nodes, on=configuration)
+	means = pd.merge(means, means_any, on=configuration)
 	means = pd.merge(means, num_solved, on=configuration)
 
 	print(means)
-	pretty_df(means, pconf).to_csv(f"build/{pname}-means.csv", index=False)
+	pretty_df(means, pconf, solved_by_all).to_csv(f"build/{pname}-means.csv", index=False)
 
 	# instance size vs time plot
 	pdf = df[df['density'].isin([20, 30, 40, 50])]
-	pdf = pdf[pdf['params'].isin(['default', 'no-cuts', 'no-m', 'f+r1+b2'])]
+	pdf = pdf[(pdf['params'].isin(['default', 'no-cuts', 'no-m', 'f+r1+b2'])) | (pdf['configuration']=='kb ad-hoc: b2')]
 	plt_binomial = pdf['binomial'] = pdf.apply(lambda row: scipy.special.comb(row['n'], row['m']), axis=1)
-	plt_config = pdf['configuration'] = pdf.apply(lambda row: f"{row['program']} - {row['params']}", axis=1)
+	plt_config = pdf['configuration'] = pdf.apply(lambda row: f"{row['program']}: {row['params']}", axis=1)
 	plt.figure(figsize=(10, 6))
 	sns.scatterplot(x=plt_binomial, y=pdf['time'], hue=plt_config, palette='deep')
 	plt.xscale('log')
@@ -143,7 +156,7 @@ for pname, pconf in presets:
 	for config in pdf['configuration'].unique():
 		subset = pdf[pdf['configuration'] == config]
 		x = np.log10(subset['binomial'])
-		y = np.log10(subset['time'])
+		y = np.log10(.05+subset['time'])
 		slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
 		plt.plot(subset['binomial'], 10**(intercept + slope * np.log10(subset['binomial'])), label=f'{config} fit')
 	plt.grid(True, which="both", ls="--")

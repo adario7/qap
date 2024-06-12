@@ -31,6 +31,10 @@ for filename in os.listdir(dir_path):
 				if len(arr) == 2:
 					key, value = arr
 					map[key.strip()] = value.strip()
+
+	if map['program']=='custom' and map['params']=='': # backw compat
+		map['params'] = 'b_1'
+
 	all_maps.append(map)
 
 with open(output_file, 'w') as file:
