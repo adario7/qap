@@ -373,6 +373,8 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 	constexpr double EPS = 1E-6;
 	for (int i=0; i<N; i++) {
 		double x = sol[i_x(i)];
+		if (x <= 1e-4) continue;
+		if (x >= 1-1e-4) continue;
 		double unfeas = 0.5 - abs(x - 0.5);
 		most_unfeas = max(most_unfeas, unfeas);
 		tot_unfeas += unfeas*unfeas;
@@ -383,7 +385,7 @@ void eval_state(CPXENVptr env, CPXLPptr lp, nbitset fixed, nbitset fvalue, vecto
 		} else {
 			gap = localM[i] - localL[i];
 		}
-		gap *= 1 + (double(rand()) / RAND_MAX)*1e-3;
+		gap *= 1 + drand48()*1e-3;
 		double score = unfeas * gap;
 		if (score > best_score) {
 			best_score = score;
@@ -441,11 +443,12 @@ bool has_time(const node_queue& nq) {
 }
 
 int main(int argc, char** argv) {
+	PARAM_BRANCHING = 1;
 	read_parameters(argc, argv);
 	read_inputs();
 	preorder_B();
 	calc_root_LM();
-	srand(PARAM_SEED);
+	srand48(PARAM_SEED);
 
 	int status;
     CPXENVptr env = CPXopenCPLEX(&status);
@@ -523,6 +526,7 @@ int main(int argc, char** argv) {
 	cerr << "# time = " << t_took << endl;
 	cerr << "# custom"
 		<< ", seed = " << PARAM_SEED
+		<< ", branching = " << PARAM_BRANCHING
 		<< ", single thread = " << PARAM_SINGLE_THREAD
 		<< ", tl = " << PARAM_TIME_LIMIT
 		<< endl;
